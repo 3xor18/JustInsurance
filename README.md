@@ -1,57 +1,101 @@
 # JustInsurance support-desk work sample
 
-You are inheriting a small, unfinished support inbox. Make one customer-support workflow safe and usable. This is fictional assessment software. It uses synthetic data and is not work on our production system.
+A small support inbox connected to a GHL-like mock provider, made **safe and usable**. Inbound events are
+idempotent, organizations are isolated, approval is tied to the exact text, delivery is honest (uncertain
+outcomes become `UNKNOWN` and are reconciled, never resent blindly), human takeover blocks automation,
+and the inbox tells the agent the next safe action.
 
-## Format and time limit
+- Original assignment: [`docs/ASSIGNMENT.md`](docs/ASSIGNMENT.md) · contract: [`CONTRACT.md`](CONTRACT.md)
+- Handoff (what was fixed, checks, operator runbook, risks, AI use): [`HANDOFF.md`](HANDOFF.md)
+- Output document: [`docs/output/support-desk-docs.html`](docs/output/support-desk-docs.html)
+- Before/after evidence: [`docs/before-after/report.html`](docs/before-after/report.html) · [`report.md`](docs/before-after/report.md)
 
-- Up to **3 hours of implementation**. Candidates selected to advance will have a **45-minute live walkthrough and change**. Stop at the limit and explain remaining work; do not hide extra hours. If setup blocks you, tell us before spending more than 20 minutes on it; setup assistance does not count against implementation time.
-- **This assessment is unpaid.** Confirm that you are comfortable with these terms before starting. Participation does not guarantee an interview or a job offer. If you previously received a paid invitation, resolve those earlier terms with the recruiter before starting or continuing; this document does not silently replace an accepted paid arrangement.
-- AI assistants, documentation, search, and your usual editor are allowed throughout. You may ask AI to generate, review, or debug code. You must understand and be able to change everything you submit. Do not delegate the assessment to another person.
-- No paid AI subscription, real customer data, production credentials, HighLevel account, cloud deployment, or external message delivery is required.
-- Same starter, requirements, time allowance, and core evaluation for every candidate. Clarifications that change the specification will be shared with everyone.
+## Run locally (Node.js 24+, no installation)
 
-## Business context
+```sh
+npm run provider     # terminal A: mock provider on 127.0.0.1:4301
+npm start            # terminal B: app on http://127.0.0.1:4300
+npm run event        # terminal C: post the fixture inbound event (run twice: the replay is ignored)
+npm test             # 57 tests
+```
 
-JustInsurance needs a support desk connected to a CRM before its later exam, SCORM, and tutoring projects. Support agents must see their own customers' conversations, prepare replies, approve the exact text, and understand whether a message was actually delivered. Once a person takes over a conversation, automation must stop sending new replies.
+Open http://127.0.0.1:4300 and switch between the Alpha and Beta agents. To try an uncertain delivery:
 
-This sample uses two fictional customer organizations, Alpha and Beta. They must never access each other's tickets. The mock provider is **GHL-like, not a specification or implementation of HighLevel's real API**. Judge behavior against the contract in `CONTRACT.md`, not assumptions about an external service.
+```sh
+curl -X POST http://127.0.0.1:4301/control -H 'Content-Type: application/json' -d '{"mode":"accept_then_timeout"}'
+```
 
-## Run the starter
+Then save, approve and send a draft: the ticket becomes `UNKNOWN`, Send is refused, and **Check delivery**
+resolves it to `SENT` without resending. Fresh state: stop both processes and delete `data/`. An existing
+`data/` from the original starter is migrated in place on startup.
 
-Use Node.js **24 or newer** (built-in SQLite). No npm dependencies or installation are needed. From this directory:
+## Run with Docker
 
-1. Terminal A: `npm run provider`
-2. Terminal B: `npm start`
-3. Open `http://127.0.0.1:4300`.
-4. Terminal C: `npm run event` — run it twice to replay the same inbound event.
-5. Run the two baseline tests with `npm test`.
+```sh
+docker compose up -d --build      # app + mock provider in one container, http://127.0.0.1:4300
+docker compose exec desk node -e "fetch('http://127.0.0.1:4301/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'accept_then_timeout'})}).then(r=>r.text()).then(console.log)"
+docker compose down               # add -v to drop the data volume
+```
 
-The starter intentionally passes only simple smoke tests. **Green baseline tests do not mean the application meets the requirements.** You are expected to change application code and add meaningful tests. You may edit any application file. Preserve the public HTTP contract and provider semantics. You may use TypeScript or an alternative backend language if you prefer; document an equally simple run command and keep the same observable behavior. Framework migration and visual polish earn no extra credit.
+The mock provider keeps its loopback-only binding (contract), so both processes run in the same container
+and only the app port is published, bound to `127.0.0.1`.
 
-SQLite files persist in `data/`. Stopping and starting the app must retain state. For a fresh local fixture, stop both processes, remove only this exercise's `data/` directory, then restart. Do not reset state to demonstrate restart recovery.
+## Configuration
 
-## Required behavior
+| Variable | Default | Purpose |
+|---|---|---|
+| `PORT` / `HOST` | `4300` / `127.0.0.1` | app listener |
+| `DESK_DB` | `data/desk.sqlite` | app database |
+| `PROVIDER_URL` | `http://127.0.0.1:4301` | provider base URL |
+| `PROVIDER_TIMEOUT_MS` | `5000` | provider call timeout; a timeout is an `UNKNOWN` outcome |
+| `DESK_DATA_KEY` | derived dev key | base64 32-byte key for AES-256-GCM encryption at rest |
+| `DESK_WEBHOOK_SECRET` | fixture secret | webhook shared secret |
+| `DESK_MAX_BODY_BYTES` / `DESK_MAX_MESSAGE_LENGTH` | `100000` / `5000` | input limits |
 
-1. **Safe inbound delivery.** A webhook replay must not create a second customer message or repeat its business effect, including overlapping requests and application restarts. Event identity is scoped to the organization: Alpha and Beta may both receive an event called `event-1`. The event write and its business change must succeed or fail together. Reject invalid webhook authentication.
-2. **Customer isolation.** The authenticated server-side identity controls organization access. Guessing another ticket ID or adding a different `tenantId` to a request must not allow reading or changing that ticket, its messages, audit history, approval, ownership, or delivery. Do not fix this only by hiding UI controls.
-3. **Exact approval.** A saved draft needs explicit human approval before it can be sent. Editing it invalidates that approval. A repeated click or overlapping send request must not send the same approved version twice. AI-generated text has no special authority.
-4. **Honest delivery and recovery.** The provider may accept a message but return a timeout. Do not automatically resend an uncertain delivery or call it sent without evidence. Persist an operator-visible `UNKNOWN` (or equivalent) state and a reference that can be reconciled. A restart after recording an attempt must not cause a second send. Allow the operator to check delivery; when the provider confirms the same attempt was delivered, resolve it without resending. A provider `not_found` response is inconclusive and must not authorize a blind retry. A documented, explicit rejection before acceptance can be shown as a safe failure; a sophisticated retry scheduler is not required.
-5. **Human takeover.** Once takeover commits, a new automation dispatch must be refused by server-side code. The human agent can still send a properly approved reply. You do not need to recall a message already dispatched before takeover.
-6. **Usable handoff.** The supplied inbox must show conversation, owner, current draft/approval, delivery status, and an audit trail that explains significant actions and unresolved failures. A support agent should know the next safe action. Keep untrusted customer text rendered as text, not executable HTML.
+## API (contract preserved, additive changes only)
 
-All behavior above is in scope for evaluation. We may vary IDs, timing, event bodies and request order; there are no undisclosed feature requirements. If you cannot finish, submit working progress and explicitly identify the risk and next fix. A smaller honest implementation is preferable to unsupported claims of production readiness.
+All routes from `CONTRACT.md` behave as specified. Additions:
+- `GET /api/tickets/:id` also returns `nextAction`, `approved`, attempts with `origin`/`actor`, audit with `actor`.
+- `POST /api/tickets/:id/approve` accepts an optional `{ "version": n }`; a stale version returns 409.
+- `POST /api/tickets/:id/mark-undelivered` with `{ "reason": "…" }` closes an `UNKNOWN` attempt after
+  manual verification (audited), so a resend becomes possible.
 
-## Submission
+## Architecture
 
-Return a source ZIP or private repository with:
+```
+src/
+  config/          constants (no magic strings), fixtures, AppConfig (singleton)
+  domain/          DeskError, DeliveryStateMachine, SendPolicy (specification),
+                   OutcomeClassifier / ReconcileResolver (strategy), NextActionAdvisor
+  infrastructure/  SQL, Database (unit of work), Migrator (v1–v5), FieldCipher (AES-256-GCM),
+                   repositories, SqlitePersistenceFactory (abstract factory), Logger (singleton)
+  application/     InboundWebhookHandler (idempotent receiver), DraftWorkflow,
+                   DeliveryDispatcher (outbox-style reservation), DeliveryReconciler,
+                   StartupRecovery, TicketQuery
+  http/            ActorResolver, WebhookVerifier (constant-time), Router (command table), IO
+  service.mjs      DeskService facade (the adapter from CONTRACT.md)
+  server.mjs       createApp() for tests, start() for the process
+```
 
-- Your changes and tests, with commands to start and test from a clean checkout. Exclude `data/`, real secrets and dependency folders.
-- `HANDOFF.md`, at most two pages: what you fixed; exact checks run and results; remaining limitations; how an operator handles uncertain delivery; and how you would verify the real GHL integration before rollout.
-- A short AI-use note: which tools you used, one suggestion you accepted or changed, and how you verified it. If there was no rejected suggestion, say so. We do not require private prompt history, account access, or AI-detector scores.
-- Your approximate time spent. Commit history is welcome but not proof of authorship.
+Concurrency is closed by database constraints (primary key on inbound events, partial unique indexes on
+attempts) and compare-and-set transitions, not by in-memory locks. See the generated
+[module graph](docs/graphs/module-graph.md) and the [blast radius](docs/graphs/blast-radius.md).
 
-The live session includes showing a failure before a fix, tracing code and database state, and implementing one small change to the same workflow with AI allowed. We assess reasoning, verification, communication, and ownership—not typing speed or memorized syntax.
+## How it was built
 
-## What is not required
+A role-based pipeline run with Claude Code, versioned in [`.claude/`](.claude):
+detective → cartographer → architect → developer → before/after → scribe, with a plumber for git and a
+clean-context adversarial reviewer. The full trail (reproductions, concurrency analysis, ADRs, review
+findings) is in [`.claude/cases/JI-SUPPORT-DESK.md`](.claude/cases/JI-SUPPORT-DESK.md). Git history starts
+with the untouched starter (`06d7be3`), which is the baseline of the before/after.
 
-Do not build a full CRM, actual GHL OAuth, production authentication, a real LLM integration, SCORM, an avatar tutor, billing, analytics, or a cloud deployment. Explain any production limitations rather than trying to solve the entire roadmap in three hours.
+## Repository map
+
+| Path | Content |
+|---|---|
+| `src/`, `public/`, `test/` | application, inbox UI, tests |
+| `scripts/before-after/` | black-box battery, baseline worktree runner, HTML/Markdown report |
+| `scripts/graph/` | module graph generator |
+| `scripts/docker/`, `Dockerfile`, `docker-compose.yml` | container setup |
+| `docs/` | assignment, output document, before/after report, graphs, screenshots |
+| `.claude/` | pipeline, role agents, case file |

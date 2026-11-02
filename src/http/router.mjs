@@ -3,11 +3,12 @@ import { DeskError } from '../domain/errors.mjs';
 
 const TICKET_COMMANDS = Object.freeze({
   [TicketAction.DRAFT]: (service, actor, id, body) => service.updateDraft(actor, id, body.body),
-  [TicketAction.APPROVE]: (service, actor, id) => service.approveDraft(actor, id),
+  [TicketAction.APPROVE]: (service, actor, id, body) => service.approveDraft(actor, id, body.version),
   [TicketAction.HANDOFF]: (service, actor, id) => service.handoff(actor, id),
   [TicketAction.SEND]: (service, actor, id) => service.sendReply(actor, id),
   [TicketAction.AUTOMATION]: (service, actor, id) => service.sendReply(actor, id, { automatic: true }),
-  [TicketAction.RECONCILE]: (service, actor, id) => service.reconcile(actor, id)
+  [TicketAction.RECONCILE]: (service, actor, id) => service.reconcile(actor, id),
+  [TicketAction.MARK_UNDELIVERED]: (service, actor, id, body) => service.markUndelivered(actor, id, body.reason)
 });
 
 export class Router {

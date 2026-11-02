@@ -25,6 +25,14 @@ export class FieldCipher {
 
   decrypt(stored) {
     if (!this.isEncrypted(stored)) return stored;
+    try {
+      return this.#open(stored);
+    } catch {
+      return stored;
+    }
+  }
+
+  #open(stored) {
     const [, iv, tag, data] = stored.split(Cipher.ENVELOPE_SEPARATOR).map(part => Buffer.from(part, Cipher.ENCODING));
     const decipher = createDecipheriv(Cipher.ALGORITHM, this.#key, iv);
     decipher.setAuthTag(tag);

@@ -16,18 +16,19 @@ body{font:16px system-ui;margin:32px auto;max-width:1100px;padding:0 20px;color:
 <h3>Conversation</h3><div class="panel" id="messages"></div>
 <label for="draft">Reply draft</label><textarea id="draft"></textarea>
 <small>The suggested reply is a fixed fixture. No AI API or account is needed. Suggested text has no special authority: it must be saved and approved like any other draft.</small>
-<div class="buttons"><button data-action="suggest">Use suggested reply</button><button data-action="draft">Save draft</button><button data-action="approve">Approve saved draft</button><button data-action="send">Send manually</button><button data-action="handoff">Take over</button><button data-action="automation">Simulate automation</button><button data-action="reconcile">Check delivery</button></div>
+<div class="buttons"><button data-action="suggest">Use suggested reply</button><button data-action="draft">Save draft</button><button data-action="approve">Approve saved draft</button><button data-action="send">Send manually</button><button data-action="handoff">Take over</button><button data-action="automation">Simulate automation</button><button data-action="reconcile">Check delivery</button><button data-action="mark-undelivered">Mark not delivered</button></div>
+<label for="reason">Reason (required to mark an UNKNOWN delivery as not delivered after verifying it with the provider or the customer)</label><input id="reason" style="width:95%;padding:8px">
 <h3>Delivery attempts</h3><table><thead><tr><th>#</th><th>State</th><th>Version</th><th>Origin</th><th>Client reference</th><th>Provider message</th><th>Updated</th></tr></thead><tbody id="attempts"></tbody></table>
 <h3>Audit trail</h3><table><thead><tr><th>When</th><th>Action</th><th>Actor</th><th>Detail</th></tr></thead><tbody id="audit"></tbody></table></div></section></main>
 <script type="module">
 const SUGGESTION='Thanks for reaching out. A support agent will help you recover your progress.';
-let selected;
+let selected,current;
 const $=id=>document.getElementById(id);
 const el=(tag,text,className)=>{const node=document.createElement(tag);node.textContent=text??'';if(className)node.className=className;return node;};
 const row=cells=>{const tr=document.createElement('tr');tr.append(...cells.map(c=>el('td',c)));return tr;};
 async function api(path,method='GET',body){const r=await fetch(path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer demo-'+$('identity').value+'-token'},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error);return data;}
 function render(t){
-  $('work').hidden=false;$('title').textContent=t.subject+' · '+t.contact;
+  current=t;$('work').hidden=false;$('title').textContent=t.subject+' · '+t.contact;
   $('next').textContent='Next safe action: '+t.nextAction;
   $('state').replaceChildren(el('span',t.send_state,'badge '+t.send_state),el('span','Owner: '+t.owner,'badge'),el('span','Draft v'+t.version,'badge'),el('span',t.approved?'Approved v'+t.approved_version:'Not approved','badge '+(t.approved?'APPROVED':'')));
   $('draft').value=t.draft;
@@ -38,6 +39,6 @@ function render(t){
 async function refresh(){const rows=await api('/api/tickets');$('tickets').replaceChildren();for(const t of rows){const li=document.createElement('li'),b=document.createElement('button');b.textContent=t.id+': '+t.contact+' ('+t.send_state+')';b.onclick=()=>act(async()=>{selected=t.id;render(await api('/api/tickets/'+selected));});li.append(b);$('tickets').append(li);}}
 async function act(fn){try{$('notice').textContent='';await fn();}catch(e){$('notice').textContent=e.message;if(selected){try{render(await api('/api/tickets/'+selected));}catch{}}}}
 $('refresh').onclick=()=>act(refresh);$('identity').onchange=()=>{selected=undefined;$('work').hidden=true;$('title').textContent='Select a ticket';act(refresh);};
-for(const b of document.querySelectorAll('[data-action]'))b.onclick=()=>act(async()=>{const a=b.dataset.action;if(a==='suggest'){$('draft').value=SUGGESTION;$('notice').textContent='Suggestion inserted. Save it as a draft, review it, then approve.';return;}const t=await api('/api/tickets/'+selected+'/'+a,'POST',a==='draft'?{body:$('draft').value}:{});render(t);$('notice').textContent='Done. '+t.nextAction;});
+for(const b of document.querySelectorAll('[data-action]'))b.onclick=()=>act(async()=>{const a=b.dataset.action;if(a==='suggest'){$('draft').value=SUGGESTION;$('notice').textContent='Suggestion inserted. Save it as a draft, review it, then approve.';return;}if(a==='approve'&&$('draft').value!==current.draft){$('notice').textContent='The text box has unsaved changes. Save the draft, review it, then approve.';return;}const payload={draft:{body:$('draft').value},approve:{version:current.version},'mark-undelivered':{reason:$('reason').value}}[a]??{};const t=await api('/api/tickets/'+selected+'/'+a,'POST',payload);render(t);$('notice').textContent='Done. '+t.nextAction;});
 act(refresh);
 </script></html>

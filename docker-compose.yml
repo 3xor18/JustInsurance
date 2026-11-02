@@ -1,0 +1,14 @@
+services:
+  desk:
+    build: .
+    image: justinsurance-support-desk:local
+    ports:
+      - "127.0.0.1:4300:4300"
+    environment:
+      PROVIDER_TIMEOUT_MS: "5000"
+      DESK_DATA_KEY: "${DESK_DATA_KEY:-}"
+    volumes:
+      - desk-data:/app/data
+    restart: unless-stopped
+volumes:
+  desk-data:

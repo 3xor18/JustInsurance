@@ -23,6 +23,7 @@ export class DeskService {
     this.db = factory.createDatabase();
     const repositories = factory.createRepositories(this.db);
     const access = new TicketAccess(repositories.tickets);
+    this.limits = config.limits;
     const shared = { db: this.db, repositories, access, limits: config.limits };
     this.query = new TicketQuery({ repositories, access, advisor: new NextActionAdvisor() });
     this.inbound = new InboundWebhookHandler(shared);
@@ -45,8 +46,8 @@ export class DeskService {
     return this.getTicket(actor, id);
   }
 
-  approveDraft(actor, id) {
-    this.drafts.approve(actor, id);
+  approveDraft(actor, id, reviewedVersion) {
+    this.drafts.approve(actor, id, reviewedVersion);
     return this.getTicket(actor, id);
   }
 
@@ -57,6 +58,11 @@ export class DeskService {
 
   async sendReply(actor, id, options = {}) {
     await this.dispatcher.dispatch(actor, id, options);
+    return this.getTicket(actor, id);
+  }
+
+  markUndelivered(actor, id, reason) {
+    this.reconciler.markUndelivered(actor, id, reason, this.limits.maxMessageLength);
     return this.getTicket(actor, id);
   }
 

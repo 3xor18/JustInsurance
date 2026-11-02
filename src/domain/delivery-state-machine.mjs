@@ -2,7 +2,7 @@ import { DeliveryState, ErrorMessage } from '../config/constants.mjs';
 
 const TRANSITIONS = Object.freeze({
   [DeliveryState.PENDING]: Object.freeze([DeliveryState.SENT, DeliveryState.UNKNOWN, DeliveryState.FAILED]),
-  [DeliveryState.UNKNOWN]: Object.freeze([DeliveryState.SENT]),
+  [DeliveryState.UNKNOWN]: Object.freeze([DeliveryState.SENT, DeliveryState.FAILED]),
   [DeliveryState.SENT]: Object.freeze([]),
   [DeliveryState.FAILED]: Object.freeze([])
 });

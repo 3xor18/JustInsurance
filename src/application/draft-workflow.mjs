@@ -23,10 +23,10 @@ export class DraftWorkflow {
     });
   }
 
-  approve(actor, id) {
+  approve(actor, id, reviewedVersion) {
     this.db.transaction(() => {
       const ticket = this.access.require(actor, id);
-      if (!ticket.draft) throw DeskError.badRequest(ErrorMessage.NO_DRAFT);
+      this.#assertApprovable(ticket, reviewedVersion);
       this.repositories.tickets.approve(actor.tenantId, id, ticket.version, actor.id);
       this.repositories.audit.record(id, AuditAction.APPROVED, actor.id, describe(AuditDetail.VERSION + ticket.version));
     });
@@ -38,6 +38,12 @@ export class DraftWorkflow {
       this.repositories.tickets.assignOwner(actor.tenantId, id, Owner.HUMAN);
       this.repositories.audit.record(id, AuditAction.HUMAN_HANDOFF, actor.id, describe(Owner.HUMAN));
     });
+  }
+
+  #assertApprovable(ticket, reviewedVersion) {
+    if (!ticket.draft) throw DeskError.badRequest(ErrorMessage.NO_DRAFT);
+    if (reviewedVersion !== undefined && reviewedVersion !== ticket.version) throw DeskError.conflict(ErrorMessage.APPROVAL_VERSION_MISMATCH);
+    if (this.repositories.attempts.findLiveForVersion(ticket.id, ticket.version)) throw DeskError.conflict(ErrorMessage.ALREADY_DISPATCHED);
   }
 
   #assertReply(body) {

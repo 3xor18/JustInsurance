@@ -3,11 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "node src/server.mjs",
     "provider": "node src/mock-provider.mjs",
     "test": "node --test test/*.test.mjs",
-    "event": "node src/replay-event.mjs"
+    "event": "node src/replay-event.mjs",
+    "before-after": "node --no-warnings scripts/before-after/run.mjs",
+    "graph": "node --no-warnings scripts/graph/build-graph.mjs",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down"
   }
 }

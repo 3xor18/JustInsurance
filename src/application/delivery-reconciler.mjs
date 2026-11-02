@@ -1,6 +1,6 @@
 import { AuditAction, AuditDetail, DeliveryState, ErrorMessage, UNRESOLVED_STATES } from '../config/constants.mjs';
 import { DeskError } from '../domain/errors.mjs';
-import { describe } from './support.mjs';
+import { describe, isNonEmptyText } from './support.mjs';
 
 const MULTIPLE_DELIVERIES = 1;
 
@@ -17,6 +17,19 @@ export class DeliveryReconciler {
     const attempt = this.db.transaction(() => this.#requireUnresolved(actor, id));
     const resolution = await this.#lookup(attempt);
     this.db.transaction(() => this.#apply(actor, attempt, resolution));
+  }
+
+  markUndelivered(actor, id, reason, maxReasonLength) {
+    if (!isNonEmptyText(reason, maxReasonLength)) throw DeskError.badRequest(ErrorMessage.REASON_REQUIRED);
+    this.db.transaction(() => {
+      const attempt = this.#requireUnresolved(actor, id);
+      if (attempt.state !== DeliveryState.UNKNOWN) throw DeskError.conflict(ErrorMessage.ONLY_UNKNOWN_CAN_BE_MARKED);
+      this.repositories.attempts.transition(attempt.id, DeliveryState.UNKNOWN, DeliveryState.FAILED);
+      this.repositories.tickets.setSendStateIfVersion(attempt.ticket_id, attempt.version, DeliveryState.FAILED);
+      this.repositories.audit.record(attempt.ticket_id, AuditAction.MARKED_UNDELIVERED, actor.id, describe(
+        AuditDetail.CLIENT_REF + attempt.client_ref, AuditDetail.REASON + reason
+      ));
+    });
   }
 
   #requireUnresolved(actor, id) {

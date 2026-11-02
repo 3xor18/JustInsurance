@@ -1,5 +1,5 @@
 import { DeliveryState } from '../config/constants.mjs';
-import { AttemptSql, AuditSql, InboundEventSql, MessageSql, TicketSql } from './sql.mjs';
+import { AttemptSql, AuditSql, InboundEventSql, MessageSql, TicketSql, UNRESOLVED_PARAMS } from './sql.mjs';
 
 export class TicketRepository {
   constructor(db, cipher) {
@@ -8,7 +8,7 @@ export class TicketRepository {
   }
 
   listForTenant(tenantId) {
-    return this.db.all(TicketSql.listForTenant, tenantId);
+    return this.db.all(TicketSql.listForTenant, ...UNRESOLVED_PARAMS, tenantId).map(row => ({ ...row, draft: this.cipher.decrypt(row.draft) }));
   }
 
   findForTenant(tenantId, id) {
@@ -81,11 +81,11 @@ export class AttemptRepository {
   }
 
   findUnresolved(ticketId) {
-    return this.#decode(this.db.get(AttemptSql.findUnresolved, ticketId));
+    return this.#decode(this.db.get(AttemptSql.findUnresolved, ticketId, ...UNRESOLVED_PARAMS));
   }
 
   findLiveForVersion(ticketId, version) {
-    return this.#decode(this.db.get(AttemptSql.findLiveForVersion, ticketId, version));
+    return this.#decode(this.db.get(AttemptSql.findLiveForVersion, ticketId, version, DeliveryState.FAILED));
   }
 
   listByTicket(ticketId) {

@@ -63,7 +63,8 @@ describe('domain units', () => {
     const machine = new DeliveryStateMachine();
     assert.equal(machine.canTransition('PENDING', 'UNKNOWN'), true);
     assert.equal(machine.canTransition('UNKNOWN', 'SENT'), true);
-    assert.equal(machine.canTransition('UNKNOWN', 'FAILED'), false);
+    assert.equal(machine.canTransition('UNKNOWN', 'FAILED'), true);
+    assert.equal(machine.canTransition('UNKNOWN', 'PENDING'), false);
     assert.equal(machine.canTransition('SENT', 'PENDING'), false);
     assert.throws(() => machine.assertTransition('FAILED', 'SENT'));
     assert.equal(machine.isTerminal('SENT'), true);

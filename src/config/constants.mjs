@@ -33,7 +33,8 @@ export const AuditAction = freeze({
   RECONCILE_INCONCLUSIVE: 'reconcile_inconclusive',
   DUPLICATE_DELIVERY_DETECTED: 'duplicate_delivery_detected',
   RECOVERED_AFTER_RESTART: 'recovered_after_restart',
-  SETTLEMENT_SKIPPED: 'settlement_skipped'
+  SETTLEMENT_SKIPPED: 'settlement_skipped',
+  MARKED_UNDELIVERED: 'marked_undelivered'
 });
 
 export const ProviderErrorKind = freeze({ NOT_ACCEPTED: 'not_accepted', UNKNOWN: 'unknown' });
@@ -82,7 +83,7 @@ export const RoutePath = freeze({
   WEBHOOK: '/webhooks/ghl',
   TICKETS: '/api/tickets',
   TICKET: /^\/api\/tickets\/(\d+)$/,
-  TICKET_ACTION: /^\/api\/tickets\/(\d+)\/(draft|approve|send|automation|handoff|reconcile)$/
+  TICKET_ACTION: /^\/api\/tickets\/(\d+)\/(draft|approve|send|automation|handoff|reconcile|mark-undelivered)$/
 });
 
 export const TicketAction = freeze({
@@ -91,7 +92,8 @@ export const TicketAction = freeze({
   SEND: 'send',
   AUTOMATION: 'automation',
   HANDOFF: 'handoff',
-  RECONCILE: 'reconcile'
+  RECONCILE: 'reconcile',
+  MARK_UNDELIVERED: 'mark-undelivered'
 });
 
 export const ErrorMessage = freeze({
@@ -108,6 +110,10 @@ export const ErrorMessage = freeze({
   UNRESOLVED_DELIVERY: 'A previous delivery is unresolved; check delivery before sending again',
   TAKEOVER_BLOCKS_AUTOMATION: 'A human owns this conversation; automation may not send',
   NOTHING_TO_RECONCILE: 'There is no pending or uncertain delivery to check',
+  APPROVAL_VERSION_MISMATCH: 'The draft changed since you reviewed it; reload and review the current version before approving',
+  REASON_REQUIRED: 'A reason is required',
+  ONLY_UNKNOWN_CAN_BE_MARKED: 'Only an UNKNOWN delivery can be marked as not delivered',
+  INVALID_BODY: 'The request body must be a JSON object',
   NOT_FOUND: 'Not found',
   METHOD_NOT_ALLOWED: 'Method not allowed',
   BODY_TOO_LARGE: 'Body too large',
@@ -124,8 +130,8 @@ export const NextAction = freeze({
   APPROVE: 'Review the saved draft and approve it.',
   SEND: 'Send the approved reply.',
   WAIT_FOR_DISPATCH: 'A dispatch is in progress. Wait, then check delivery. Do not send again.',
-  CHECK_DELIVERY: 'Delivery is uncertain. Use "Check delivery". Do not send again or edit to resend until it is resolved.',
-  RETRY_SEND: 'The provider explicitly rejected the message before accepting it. It is safe to send the approved reply again.',
+  CHECK_DELIVERY: 'Delivery is uncertain. Use "Check delivery". Do not send again or edit to resend. If checks stay inconclusive, verify with the provider and the customer, then use "Mark not delivered" with a reason.',
+  RETRY_SEND: 'The last attempt is recorded as not delivered (explicit provider rejection or verified by an operator). It is safe to send the approved reply again.',
   NEW_REPLY: 'The reply was accepted by the provider. Write a new draft to reply again.'
 });
 
@@ -140,7 +146,8 @@ export const AuditDetail = freeze({
   EVENT: 'event=',
   FROM_STATE: 'from=',
   LOOKUP_ERROR: 'lookup_failed',
-  LOOKUP_NOT_FOUND: 'not_found_is_inconclusive'
+  LOOKUP_NOT_FOUND: 'not_found_is_inconclusive',
+  ATTEMPT_STILL_PENDING: 'attempt_still_in_flight'
 });
 
 export const LogEvent = freeze({

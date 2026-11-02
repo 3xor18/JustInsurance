@@ -79,6 +79,17 @@ describe('HTTP contract', () => {
     assert.equal((await call('GET', '/api/nothing', ALPHA_AUTH)).status, 404);
   });
 
+  test('non-object JSON bodies are refused with 400', async () => {
+    assert.equal((await call('POST', '/api/tickets/101/draft', ALPHA_AUTH, 'null')).status, 400);
+    assert.equal((await call('POST', '/api/tickets/101/approve', ALPHA_AUTH, '[1]')).status, 400);
+  });
+
+  test('approve accepts the reviewed version and rejects a stale one', async () => {
+    const draft = await call('POST', '/api/tickets/101/draft', ALPHA_AUTH, { body: 'Reviewed over HTTP' });
+    assert.equal((await call('POST', '/api/tickets/101/approve', ALPHA_AUTH, { version: draft.body.version - 1 })).status, 409);
+    assert.equal((await call('POST', '/api/tickets/101/approve', ALPHA_AUTH, { version: draft.body.version })).status, 200);
+  });
+
   test('oversized bodies are refused', async () => {
     const response = await call('POST', '/api/tickets/101/draft', ALPHA_AUTH, { body: 'x'.repeat(200000) });
     assert.equal(response.status, 413);

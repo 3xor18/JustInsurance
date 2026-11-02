@@ -2,6 +2,9 @@ import { AuditAction, AuditDetail, ErrorMessage, SystemActor } from '../config/c
 import { DeskError } from '../domain/errors.mjs';
 import { describe, isNonEmptyText, isTicketId } from './support.mjs';
 
+const NUMERIC = /^\d+$/;
+const toTicketId = value => (typeof value === 'string' && NUMERIC.test(value) ? Number(value) : value);
+
 export class InboundWebhookHandler {
   constructor({ db, repositories, limits }) {
     this.db = db;
@@ -10,8 +13,9 @@ export class InboundWebhookHandler {
   }
 
   handle(event) {
-    this.#assertShape(event);
-    return this.db.transaction(() => this.#store(event));
+    const normalized = { ...event, ticketId: toTicketId(event?.ticketId) };
+    this.#assertShape(normalized);
+    return this.db.transaction(() => this.#store(normalized));
   }
 
   #assertShape(event) {

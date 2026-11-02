@@ -1,0 +1,81 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Support desk — output document</title>
+<style>
+body{font:15px/1.5 system-ui;max-width:1100px;margin:30px auto;padding:0 20px;color:#182231}
+h1{margin-bottom:4px}.badges span{display:inline-block;background:#e5e7eb;border-radius:10px;padding:2px 9px;font-size:12px;font-weight:700;margin-right:6px}
+.summary{background:#eff6ff;border-left:5px solid #2563eb;padding:10px 14px}
+table{border-collapse:collapse;width:100%;margin:8px 0 18px}td,th{border:1px solid #d5dae2;padding:5px 8px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f1f3f6}
+pre{background:#0f172a;color:#e2e8f0;padding:10px 12px;overflow:auto;font-size:13px}.new{background:#fff59d}.ok{color:#15803d;font-weight:700}.ko{color:#b91c1c;font-weight:700}
+code{background:#f1f3f6;padding:1px 4px}
+</style>
+<h1>Support desk — make the reply workflow safe and usable</h1>
+<div class="badges"><span>CASE JI-SUPPORT-DESK</span><span>BACKEND</span><span>UI</span><span>DATA MODEL</span><span>SECURITY</span></div>
+<p class="summary"><b>Executive summary.</b> The inherited inbox could duplicate inbound messages, let one organization read and change another's tickets, send an edited draft without re-approval, send the same reply several times on overlapping clicks, retry a timed-out delivery with a fresh reference (delivering twice) while recording nothing, and let automation reply after a human took over. All six required behaviours are now enforced on the server with database constraints and compare-and-set transitions, verified by 57 tests (20 of them fail on the original code) and by a black-box before/after battery (baseline 2/13, feature 13/13).</p>
+
+<h2>1. What changed, in plain words</h2>
+<ul>
+<li><b>Inbound:</b> the same event (per organization) is stored once, even if it arrives many times at once or after a restart.</li>
+<li><b>Isolation:</b> an agent only ever sees and changes their own organization's tickets; guessing an id returns "not found".</li>
+<li><b>Approval:</b> approval belongs to one exact version of the text; any edit removes it; overlapping clicks send once.</li>
+<li><b>Delivery:</b> the app writes down the attempt before calling the provider. If the provider's answer is uncertain, the attempt is <code>UNKNOWN</code> and is never resent automatically; "Check delivery" asks the provider by reference.</li>
+<li><b>Takeover:</b> once a human owns the conversation, automation cannot send; the human still can.</li>
+<li><b>Inbox:</b> shows state, owner, approval, attempts, an audit trail with who did what, and the next safe action.</li>
+</ul>
+
+<h2>2. Data seed and setup</h2>
+<p>No manual seed. Migration v1 creates the starter schema and the two fixture tickets (101 Alpha, 202 Beta); v2–v5 add approval metadata, timestamps, the audit actor, <code>inbound_events</code>, and rebuild <code>attempts</code> with origin/actor and partial unique indexes. An existing starter <code>data/desk.sqlite</code> is upgraded in place (covered by a test).</p>
+<pre>npm run provider &amp;&amp; npm start &amp;&amp; npm run event     # or: docker compose up -d --build</pre>
+
+<h2>3. Endpoints (100% of the public surface)</h2>
+<table><thead><tr><th>Endpoint</th><th>What it does</th><th>curl</th><th>Before</th><th>After</th></tr></thead><tbody>
+<tr><td><code>POST /webhooks/ghl</code></td><td>Receives a customer message. Authenticated by shared secret (constant-time). Idempotent per (tenant, event).</td><td><pre>curl -X POST :4300/webhooks/ghl -H 'X-Demo-Webhook-Secret: fictional-webhook-secret' -H 'Content-Type: application/json' -d '{"tenantId":"alpha","ticketId":101,"eventId":"event-1","body":"Please help"}'</pre></td><td>7 deliveries of one event → 7 messages</td><td class="new">7 deliveries → 1 message; replays answer <code>{"accepted":true,"duplicate":true}</code></td></tr>
+<tr><td><code>GET /api/tickets</code></td><td>The signed-in organization's tickets.</td><td><pre>curl :4300/api/tickets -H 'Authorization: Bearer demo-alpha-token'</pre></td><td>full rows</td><td class="new">same rows; <code>send_state</code> shows an unresolved delivery even after a new draft</td></tr>
+<tr><td><code>GET /api/tickets/:id</code></td><td>Ticket with messages, attempts and audit.</td><td><pre>curl :4300/api/tickets/101 -H 'Authorization: Bearer demo-beta-token'</pre></td><td>Beta reads Alpha ticket: 200</td><td class="new">404; adds <code>nextAction</code>, <code>approved</code>, attempt <code>origin/actor</code>, audit <code>actor</code></td></tr>
+<tr><td><code>POST …/draft</code></td><td>Saves the reply draft, bumps the version, clears approval.</td><td><pre>curl -X POST :4300/api/tickets/101/draft -H 'Authorization: Bearer demo-alpha-token' -H 'Content-Type: application/json' -d '{"body":"Reply text"}'</pre></td><td>keeps old approval; Beta can overwrite Alpha draft</td><td class="new">approval invalidated (audited); cross-tenant 404</td></tr>
+<tr><td><code>POST …/approve</code></td><td>Approves the current saved version.</td><td><pre>-d '{}'   or   -d '{"version":3}'</pre></td><td>approves whatever is saved</td><td class="new">optional reviewed <code>version</code> (stale → 409); refuses a version already dispatched</td></tr>
+<tr><td><code>POST …/send</code></td><td>Manual dispatch of the approved reply.</td><td><pre>curl -X POST :4300/api/tickets/101/send -H 'Authorization: Bearer demo-alpha-token' -d '{}'</pre></td><td>5 clicks → 5 deliveries; 504 → 2 deliveries, state DRAFT, 502</td><td class="new">5 clicks → 1 delivery + 409s; 504 → 1 delivery, <code>UNKNOWN</code> recorded; 503 → <code>FAILED</code>, retry allowed</td></tr>
+<tr><td><code>POST …/automation</code></td><td>Test trigger for an automation dispatch.</td><td><pre>… /api/tickets/101/automation -d '{}'</pre></td><td>sends after takeover</td><td class="new">409 after takeover (audited <code>dispatch_refused</code>); approval required</td></tr>
+<tr><td><code>POST …/handoff</code></td><td>Assigns the conversation to a human.</td><td><pre>… /api/tickets/101/handoff -d '{}'</pre></td><td>Beta can take over Alpha ticket</td><td class="new">tenant-scoped; audited</td></tr>
+<tr><td><code>POST …/reconcile</code></td><td>Resolves the last pending/uncertain attempt with provider evidence.</td><td><pre>… /api/tickets/101/reconcile -d '{}'</pre></td><td>501 Not implemented</td><td class="new">delivered → <code>SENT</code> (no resend); <code>not_found</code>/lookup error → stays <code>UNKNOWN</code> (inconclusive, audited)</td></tr>
+<tr><td><code>POST …/mark-undelivered</code> <b>(new)</b></td><td>Operator closes an <code>UNKNOWN</code> attempt after manual verification, with a reason.</td><td><pre>… -d '{"reason":"Customer confirmed nothing arrived"}'</pre></td><td>—</td><td class="new">UNKNOWN → FAILED, audited; resend becomes possible</td></tr>
+<tr><td>process start</td><td>Migrations + recovery.</td><td>—</td><td>a crash mid-send left nothing recorded; resend delivered twice</td><td class="new">in-flight <code>PENDING</code> → <code>UNKNOWN</code> (<code>recovered_after_restart</code>); resend refused</td></tr>
+</tbody></table>
+
+<h2>4. Front-end / API consumer section</h2>
+<p>All changes are additive; existing consumers keep working. New or modified fields:</p>
+<table><thead><tr><th>Name</th><th>Where</th><th>Type</th><th>Example</th><th>Required</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>nextAction</code></td><td>GET ticket (and every action response)</td><td>string</td><td>"Delivery is uncertain. Use \"Check delivery\"…"</td><td>always present</td><td>The next safe step for the agent.</td></tr>
+<tr><td><code>approved</code></td><td>GET ticket</td><td>boolean</td><td>true</td><td>always present</td><td>The current draft version is approved.</td></tr>
+<tr><td><code>send_state</code></td><td>list + ticket</td><td>enum</td><td>DRAFT · APPROVED · PENDING · SENT · UNKNOWN · FAILED</td><td>always present</td><td>Effective delivery state; an unresolved attempt always wins.</td></tr>
+<tr><td><code>attempts[].origin</code> / <code>actor</code></td><td>GET ticket</td><td>string</td><td>"automation" / "agent-alpha"</td><td>always present</td><td>Who dispatched.</td></tr>
+<tr><td><code>audit[].actor</code></td><td>GET ticket</td><td>string</td><td>"webhook", "startup-recovery"</td><td>always present</td><td>Who caused the audited action.</td></tr>
+<tr><td><code>version</code></td><td>POST approve body</td><td>integer</td><td>3</td><td>optional</td><td>Version the agent reviewed; mismatch → 409.</td></tr>
+<tr><td><code>reason</code></td><td>POST mark-undelivered body</td><td>string ≤ 5000</td><td>"Verified in provider console"</td><td>required</td><td>Why the operator declares non-delivery.</td></tr>
+</tbody></table>
+
+<h2>5. Commits</h2>
+<p>History starts with the untouched starter (baseline). Each later commit is one pipeline slice (implementation, before/after harness, review fixes, documentation and Docker); see <code>git log</code>. No SQL needs to run outside the application: schema changes are versioned migrations executed at startup in a transaction each.</p>
+
+<h2>6. Verification matrix (requirement → evidence)</h2>
+<table><thead><tr><th>Requirement</th><th>Unit / integration tests</th><th>Before/after scenarios</th><th>Baseline</th><th>Feature</th></tr></thead><tbody>
+<tr><td>R1 Safe inbound delivery</td><td>requirements R1 (5), http overlapping replay, invalid secret, numeric-string id</td><td>S01, S02, S03</td><td class="ko">S01 FAIL</td><td class="ok">PASS</td></tr>
+<tr><td>R2 Customer isolation</td><td>requirements R2 (3), http cross-tenant</td><td>S04</td><td class="ko">FAIL</td><td class="ok">PASS</td></tr>
+<tr><td>R3 Exact approval</td><td>requirements R3 (6), stale version, re-approve after send, http concurrent send</td><td>S05, S06</td><td class="ko">FAIL</td><td class="ok">PASS</td></tr>
+<tr><td>R4 Honest delivery and recovery</td><td>requirements R4 (8), mark-undelivered, units for classifier/resolver/state machine</td><td>S07–S11</td><td class="ko">FAIL</td><td class="ok">PASS</td></tr>
+<tr><td>R5 Human takeover</td><td>requirements R5 (2)</td><td>S12</td><td class="ko">FAIL</td><td class="ok">PASS</td></tr>
+<tr><td>R6 Usable handoff</td><td>requirements R6 (2), UI never uses innerHTML, list shows UNKNOWN</td><td>S13 + screenshots</td><td class="ko">FAIL</td><td class="ok">PASS</td></tr>
+</tbody></table>
+<p>Full scenario detail with highlighted deltas: <a href="../before-after/report.html">before-after/report.html</a>. Screenshots: <a href="../screenshots/01-unknown-next-action.jpg">UNKNOWN with next action</a>, <a href="../screenshots/02-reconciled-audit.jpg">reconciled, audit trail</a>.</p>
+
+<h2>7. Operator runbook</h2>
+<ol>
+<li><b>UNKNOWN</b>: do not resend or edit to resend (the server refuses). Click <b>Check delivery</b>.</li>
+<li>Confirmed → <code>SENT</code>; nothing else to do. <code>duplicate_delivery_detected</code> in the audit means the provider holds more than one delivery for the reference: contact the customer.</li>
+<li>Still inconclusive → verify with the provider console or the customer; then <b>Mark not delivered</b> with a reason and send again.</li>
+<li><b>FAILED</b> after a 503 → safe to send again.</li>
+<li>After a restart, in-flight sends appear as <code>UNKNOWN</code> with <code>recovered_after_restart</code>; follow step 1.</li>
+</ol>
+
+<h2>8. Risks and production notes</h2>
+<p>Single process with SQLite; guarantees rely on constraints that carry over to Postgres. Provider lacks idempotency keys, so an operator's wrong "mark not delivered" can still duplicate (audited, not prevented). Encryption key from <code>DESK_DATA_KEY</code> (dev fallback derived from a fixed passphrase); production needs KMS and rotation. Fixture bearer tokens stand in for authentication. Not production-ready by design; see <code>HANDOFF.md</code>.</p>
+</html>

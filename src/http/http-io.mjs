@@ -19,8 +19,16 @@ export async function readJson(request, maxBytes) {
   return parseJson(Buffer.concat(chunks).toString(Encoding.UTF8));
 }
 
+const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+
 function parseJson(text) {
   if (!text) return {};
+  const parsed = tryParse(text);
+  if (!isPlainObject(parsed)) throw DeskError.badRequest(ErrorMessage.INVALID_BODY);
+  return parsed;
+}
+
+function tryParse(text) {
   try {
     return JSON.parse(text);
   } catch {
