@@ -1,0 +1,313 @@
+{
+  "generatedAt": "2026-11-02T11:25:14.361Z",
+  "baselineRef": "06d7be33e5a97bc9242f7bd40ff5ebf3328ed270",
+  "featureRef": "aca82ea",
+  "tests": {
+    "before": {
+      "pass": 6,
+      "fail": 20
+    },
+    "after": {
+      "pass": 26,
+      "fail": 0
+    }
+  },
+  "before": {
+    "label": "before",
+    "appDir": "baseline-worktree",
+    "results": [
+      {
+        "id": "S01",
+        "requirement": "R1",
+        "title": "Same inbound event delivered twice, then five times in parallel",
+        "observed": {
+          "statuses": "200,200,200,200,200,200,200",
+          "storedMessages": 7
+        },
+        "passed": false
+      },
+      {
+        "id": "S02",
+        "requirement": "R1",
+        "title": "Same event id for Alpha and Beta is accepted for both",
+        "observed": {
+          "alphaMessages": 1,
+          "betaMessages": 1
+        },
+        "passed": true
+      },
+      {
+        "id": "S03",
+        "requirement": "R1",
+        "title": "Webhook with a wrong secret",
+        "observed": {
+          "status": 401
+        },
+        "passed": true
+      },
+      {
+        "id": "S04",
+        "requirement": "R2",
+        "title": "Beta guesses Alpha ticket 101 and adds tenantId=alpha",
+        "observed": {
+          "readStatus": 200,
+          "writeStatus": 200,
+          "handoffStatus": 200,
+          "alphaDraft": "Beta hijack",
+          "alphaOwner": "human"
+        },
+        "passed": false
+      },
+      {
+        "id": "S05",
+        "requirement": "R3",
+        "title": "Approve, edit, then send without re-approval",
+        "observed": {
+          "sendStatus": 200,
+          "providerDeliveries": 1
+        },
+        "passed": false
+      },
+      {
+        "id": "S06",
+        "requirement": "R3",
+        "title": "Five overlapping clicks on Send for one approved version",
+        "observed": {
+          "statuses": "200,200,200,200,200",
+          "providerDeliveries": 5
+        },
+        "passed": false
+      },
+      {
+        "id": "S07",
+        "requirement": "R4",
+        "title": "Provider accepts then times out (504)",
+        "observed": {
+          "sendStatus": 502,
+          "providerDeliveries": 2,
+          "state": "DRAFT",
+          "attemptsRecorded": 0
+        },
+        "passed": false
+      },
+      {
+        "id": "S08",
+        "requirement": "R4",
+        "title": "Restart the app after the unknown attempt, then click Send again",
+        "observed": {
+          "sendStatus": 200,
+          "providerDeliveries": 1,
+          "state": "SENT"
+        },
+        "passed": false
+      },
+      {
+        "id": "S09",
+        "requirement": "R4",
+        "title": "Operator checks delivery (reconcile)",
+        "observed": {
+          "status": 501,
+          "providerDeliveries": 0,
+          "state": null
+        },
+        "passed": false
+      },
+      {
+        "id": "S10",
+        "requirement": "R4",
+        "title": "Provider rejects before accepting (503), then a retry",
+        "observed": {
+          "firstStatus": 502,
+          "stateAfterReject": "DRAFT",
+          "retryStatus": 200,
+          "retryDeliveries": 1
+        },
+        "passed": false
+      },
+      {
+        "id": "S11",
+        "requirement": "R4",
+        "title": "App killed while the provider call is in flight, restarted, Send clicked again",
+        "observed": {
+          "stateAfterRestart": "DRAFT",
+          "resendStatus": 200,
+          "stateAfterReconcile": null,
+          "providerDeliveries": 2
+        },
+        "passed": false
+      },
+      {
+        "id": "S12",
+        "requirement": "R5",
+        "title": "Human takes over, automation tries to send, human sends",
+        "observed": {
+          "automationStatus": 200,
+          "automationDeliveries": 1,
+          "humanStatus": 200,
+          "humanDeliveries": 1
+        },
+        "passed": false
+      },
+      {
+        "id": "S13",
+        "requirement": "R6",
+        "title": "Ticket view tells the operator the next safe action",
+        "observed": {
+          "hasNextAction": false,
+          "auditEntries": 36,
+          "auditHasActor": false
+        },
+        "passed": false
+      }
+    ]
+  },
+  "after": {
+    "label": "after",
+    "appDir": ".",
+    "results": [
+      {
+        "id": "S01",
+        "requirement": "R1",
+        "title": "Same inbound event delivered twice, then five times in parallel",
+        "observed": {
+          "statuses": "200,200,200,200,200,200,200",
+          "storedMessages": 1
+        },
+        "passed": true
+      },
+      {
+        "id": "S02",
+        "requirement": "R1",
+        "title": "Same event id for Alpha and Beta is accepted for both",
+        "observed": {
+          "alphaMessages": 1,
+          "betaMessages": 1
+        },
+        "passed": true
+      },
+      {
+        "id": "S03",
+        "requirement": "R1",
+        "title": "Webhook with a wrong secret",
+        "observed": {
+          "status": 401
+        },
+        "passed": true
+      },
+      {
+        "id": "S04",
+        "requirement": "R2",
+        "title": "Beta guesses Alpha ticket 101 and adds tenantId=alpha",
+        "observed": {
+          "readStatus": 404,
+          "writeStatus": 404,
+          "handoffStatus": 404,
+          "alphaDraft": "Alpha private draft",
+          "alphaOwner": "automation"
+        },
+        "passed": true
+      },
+      {
+        "id": "S05",
+        "requirement": "R3",
+        "title": "Approve, edit, then send without re-approval",
+        "observed": {
+          "sendStatus": 409,
+          "providerDeliveries": 0
+        },
+        "passed": true
+      },
+      {
+        "id": "S06",
+        "requirement": "R3",
+        "title": "Five overlapping clicks on Send for one approved version",
+        "observed": {
+          "statuses": "200,409,409,409,409",
+          "providerDeliveries": 1
+        },
+        "passed": true
+      },
+      {
+        "id": "S07",
+        "requirement": "R4",
+        "title": "Provider accepts then times out (504)",
+        "observed": {
+          "sendStatus": 200,
+          "providerDeliveries": 1,
+          "state": "UNKNOWN",
+          "attemptsRecorded": 2
+        },
+        "passed": true
+      },
+      {
+        "id": "S08",
+        "requirement": "R4",
+        "title": "Restart the app after the unknown attempt, then click Send again",
+        "observed": {
+          "sendStatus": 409,
+          "providerDeliveries": 0,
+          "state": "UNKNOWN"
+        },
+        "passed": true
+      },
+      {
+        "id": "S09",
+        "requirement": "R4",
+        "title": "Operator checks delivery (reconcile)",
+        "observed": {
+          "status": 200,
+          "providerDeliveries": 0,
+          "state": "SENT"
+        },
+        "passed": true
+      },
+      {
+        "id": "S10",
+        "requirement": "R4",
+        "title": "Provider rejects before accepting (503), then a retry",
+        "observed": {
+          "firstStatus": 200,
+          "stateAfterReject": "FAILED",
+          "retryStatus": 200,
+          "retryDeliveries": 1
+        },
+        "passed": true
+      },
+      {
+        "id": "S11",
+        "requirement": "R4",
+        "title": "App killed while the provider call is in flight, restarted, Send clicked again",
+        "observed": {
+          "stateAfterRestart": "UNKNOWN",
+          "resendStatus": 409,
+          "stateAfterReconcile": "SENT",
+          "providerDeliveries": 1
+        },
+        "passed": true
+      },
+      {
+        "id": "S12",
+        "requirement": "R5",
+        "title": "Human takes over, automation tries to send, human sends",
+        "observed": {
+          "automationStatus": 409,
+          "automationDeliveries": 0,
+          "humanStatus": 200,
+          "humanDeliveries": 1
+        },
+        "passed": true
+      },
+      {
+        "id": "S13",
+        "requirement": "R6",
+        "title": "Ticket view tells the operator the next safe action",
+        "observed": {
+          "hasNextAction": true,
+          "auditEntries": 44,
+          "auditHasActor": true
+        },
+        "passed": true
+      }
+    ]
+  }
+}
