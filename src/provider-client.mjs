@@ -1,19 +1,39 @@
+import { AppConfig } from './config/config.mjs';
+import { ErrorMessage, HeaderValue, HttpHeader, HttpMethod, HttpStatus, ProviderErrorKind } from './config/constants.mjs';
+
+const PATH = Object.freeze({ MESSAGES: '/messages', CLIENT_REF_QUERY: '?clientRef=' });
+
+const providerError = (message, kind) => Object.assign(new Error(message), { kind });
+
+const kindOf = status => (status === HttpStatus.SERVICE_UNAVAILABLE ? ProviderErrorKind.NOT_ACCEPTED : ProviderErrorKind.UNKNOWN);
+
 export class ProviderClient {
-  constructor(baseUrl = 'http://127.0.0.1:4301') { this.baseUrl = baseUrl; }
+  constructor(baseUrl = AppConfig.get().provider.baseUrl, { timeoutMs = AppConfig.get().provider.timeoutMs } = {}) {
+    this.baseUrl = baseUrl;
+    this.timeoutMs = timeoutMs;
+  }
+
   async send(payload) {
-    const response = await fetch(`${this.baseUrl}/messages`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    const response = await this.#request(PATH.MESSAGES, {
+      method: HttpMethod.POST,
+      headers: { [HttpHeader.CONTENT_TYPE]: HeaderValue.JSON },
+      body: JSON.stringify(payload)
     });
-    if (!response.ok) {
-      const error = new Error('Provider did not confirm delivery');
-      error.kind = response.status === 503 ? 'not_accepted' : 'unknown';
-      throw error;
-    }
+    if (!response.ok) throw providerError(ErrorMessage.PROVIDER_UNCONFIRMED, kindOf(response.status));
     return response.json();
   }
+
   async lookup(clientRef) {
-    const r = await fetch(`${this.baseUrl}/messages?clientRef=${encodeURIComponent(clientRef)}`);
-    if (!r.ok) throw new Error('Lookup unavailable');
-    return r.json();
+    const response = await this.#request(PATH.MESSAGES + PATH.CLIENT_REF_QUERY + encodeURIComponent(clientRef), { method: HttpMethod.GET });
+    if (!response.ok) throw providerError(ErrorMessage.PROVIDER_LOOKUP_UNAVAILABLE, ProviderErrorKind.UNKNOWN);
+    return response.json();
+  }
+
+  async #request(path, init) {
+    try {
+      return await fetch(this.baseUrl + path, { ...init, signal: AbortSignal.timeout(this.timeoutMs) });
+    } catch (error) {
+      throw providerError(error.message, ProviderErrorKind.UNKNOWN);
+    }
   }
 }

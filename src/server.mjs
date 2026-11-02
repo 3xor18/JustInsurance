@@ -1,53 +1,51 @@
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { DeskService } from './service.mjs';
+import { randomUUID } from 'node:crypto';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { AppConfig } from './config/config.mjs';
+import { ErrorMessage, HttpStatus, LogEvent } from './config/constants.mjs';
+import { isDeskError } from './domain/errors.mjs';
+import { ActorResolver, WebhookVerifier } from './http/auth.mjs';
+import { readJson, sendHtml, sendJson } from './http/http-io.mjs';
+import { Router } from './http/router.mjs';
+import { Logger } from './infrastructure/logger.mjs';
 import { ProviderClient } from './provider-client.mjs';
-import { actors, DeskError } from './store.mjs';
+import { DeskService } from './service.mjs';
 
-const service = new DeskService({ databasePath: process.env.DESK_DB || resolve('data/desk.sqlite'),
-  provider: new ProviderClient(process.env.PROVIDER_URL) });
-const read = async req => {
-  let body = '';
-  for await (const chunk of req) {
-    body += chunk; if (body.length > 100000) throw new DeskError(413, 'Body too large');
-  }
-  try { return body ? JSON.parse(body) : {}; } catch { throw new DeskError(400, 'Invalid JSON'); }
-};
-const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
-const server = createServer(async (req, res) => {
-  try {
-    const url = new URL(req.url, 'http://localhost');
-    if (req.method === 'GET' && url.pathname === '/') {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return res.end(readFileSync(fileURLToPath(new URL('../public/index.html', import.meta.url))));
+const HOME_PAGE_URL = new URL('../public/index.html', import.meta.url);
+const LOCAL_ORIGIN = 'http://localhost';
+const SHUTDOWN_SIGNALS = Object.freeze(['SIGTERM', 'SIGINT']);
+
+export function createApp({ config = AppConfig.get(), service, logger = Logger.get() } = {}) {
+  const homePage = () => readFileSync(fileURLToPath(HOME_PAGE_URL));
+  const router = new Router({
+    service,
+    actors: new ActorResolver(config.security.identities),
+    webhookVerifier: new WebhookVerifier(config.security.webhookSecret),
+    readBody: request => readJson(request, config.server.maxBodyBytes),
+    homePage
+  });
+  return createServer(async (request, response) => {
+    const requestId = randomUUID();
+    try {
+      const result = await router.handle(request, new URL(request.url, LOCAL_ORIGIN));
+      return result.html ? sendHtml(response, HttpStatus.OK, result.html, requestId) : sendJson(response, HttpStatus.OK, result.json, requestId);
+    } catch (error) {
+      if (isDeskError(error)) return sendJson(response, error.status, { error: error.message }, requestId);
+      logger.error(LogEvent.REQUEST_FAILED, { requestId, method: request.method, path: request.url, message: error.message, stack: error.stack });
+      return sendJson(response, HttpStatus.INTERNAL_ERROR, { error: ErrorMessage.UNEXPECTED, requestId }, requestId);
     }
-    if (req.method === 'POST' && url.pathname === '/webhooks/ghl') {
-      if (req.headers['x-demo-webhook-secret'] !== 'fictional-webhook-secret') throw new DeskError(401, 'Invalid webhook secret');
-      return json(res, 200, service.receiveWebhook(await read(req)));
-    }
-    const actor = actors[(req.headers.authorization || '').replace(/^Bearer /, '')];
-    if (!actor) throw new DeskError(401, 'Sign in using a demo identity');
-    if (req.method === 'GET' && url.pathname === '/api/tickets') return json(res, 200, service.listTickets(actor));
-    const match = url.pathname.match(/^\/api\/tickets\/(\d+)(?:\/(draft|approve|send|automation|handoff|reconcile))?$/);
-    if (!match) throw new DeskError(404, 'Not found');
-    const id = Number(match[1]), action = match[2];
-    if (req.method === 'GET' && !action) return json(res, 200, service.getTicket(actor, id));
-    if (req.method !== 'POST') throw new DeskError(405, 'Method not allowed');
-    const b = await read(req);
-    let result;
-    switch (action) {
-      case 'draft': result = service.updateDraft(actor, id, b.body); break;
-      case 'approve': result = service.approveDraft(actor, id); break;
-      case 'handoff': result = service.handoff(actor, id); break;
-      case 'send': result = await service.sendReply(actor, id); break;
-      case 'automation': result = await service.sendReply(actor, id, { automatic: true }); break;
-      case 'reconcile': result = await service.reconcile(actor, id); break;
-      default: throw new DeskError(404, 'Not found');
-    }
-    json(res, 200, result);
-  } catch (e) { json(res, e.status || 502, { error: e.message }); }
-});
-server.listen(Number(process.env.PORT || 4300), '127.0.0.1', () => console.log('Support desk: http://127.0.0.1:' + (process.env.PORT || 4300)));
-process.on('SIGTERM', () => server.close(() => { service.close(); process.exit(); }));
+  });
+}
+
+export function start(config = AppConfig.get(), logger = Logger.get()) {
+  const service = new DeskService({ databasePath: config.database.path, provider: new ProviderClient(config.provider.baseUrl, config.provider), config });
+  const server = createApp({ config, service, logger });
+  if (service.recoveredAttempts) logger.warn(LogEvent.RECOVERY, { recoveredAttempts: service.recoveredAttempts });
+  server.listen(config.server.port, config.server.host, () => logger.info(LogEvent.LISTENING, { url: `http://${config.server.host}:${config.server.port}` }));
+  const shutdown = () => server.close(() => { service.close(); logger.info(LogEvent.SHUTDOWN); process.exit(); });
+  SHUTDOWN_SIGNALS.forEach(signal => process.on(signal, shutdown));
+  return { server, service };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) start();

@@ -1,70 +1,67 @@
-import { randomUUID } from 'node:crypto';
-import { openStore, record, ticketView, DeskError } from './store.mjs';
+import { AppConfig } from './config/config.mjs';
+import { Database as DatabaseConstant } from './config/constants.mjs';
+import { NextActionAdvisor } from './domain/next-action-advisor.mjs';
+import { OutcomeClassifier } from './domain/outcome-classifier.mjs';
+import { ReconcileResolver } from './domain/reconcile-resolver.mjs';
+import { SendPolicy } from './domain/send-policy.mjs';
+import { SqlitePersistenceFactory } from './infrastructure/persistence-factory.mjs';
+import { DeliveryDispatcher } from './application/delivery-dispatcher.mjs';
+import { DeliveryReconciler } from './application/delivery-reconciler.mjs';
+import { DraftWorkflow } from './application/draft-workflow.mjs';
+import { InboundWebhookHandler } from './application/inbound-webhook-handler.mjs';
+import { StartupRecovery } from './application/startup-recovery.mjs';
+import { TicketAccess } from './application/support.mjs';
+import { TicketQuery } from './application/ticket-query.mjs';
 
-// This inherited implementation is intentionally incomplete. See README acceptance criteria.
+export { DeskError } from './domain/errors.mjs';
+
 export class DeskService {
-  constructor({ databasePath = ':memory:', provider }) {
-    this.db = openStore(databasePath);
-    this.provider = provider;
+  constructor({ databasePath = DatabaseConstant.MEMORY, provider, config = AppConfig.get(), persistenceFactory } = {}) {
+    const factory = persistenceFactory ?? new SqlitePersistenceFactory({
+      databasePath, busyTimeoutMs: config.database.busyTimeoutMs, security: config.security
+    });
+    this.db = factory.createDatabase();
+    const repositories = factory.createRepositories(this.db);
+    const access = new TicketAccess(repositories.tickets);
+    const shared = { db: this.db, repositories, access, limits: config.limits };
+    this.query = new TicketQuery({ repositories, access, advisor: new NextActionAdvisor() });
+    this.inbound = new InboundWebhookHandler(shared);
+    this.drafts = new DraftWorkflow(shared);
+    this.dispatcher = new DeliveryDispatcher({ ...shared, provider, policy: new SendPolicy(), classifier: new OutcomeClassifier() });
+    this.reconciler = new DeliveryReconciler({ ...shared, provider, resolver: new ReconcileResolver() });
+    this.recoveredAttempts = new StartupRecovery(shared).run();
   }
+
   close() { this.db.close(); }
-  listTickets(actor) {
-    return this.db.prepare('SELECT * FROM tickets WHERE tenant_id = ? ORDER BY id').all(actor.tenantId);
-  }
-  row(actor, id) {
-    const row = this.db.prepare('SELECT * FROM tickets WHERE id = ?').get(id);
-    if (!row) throw new DeskError(404, 'Ticket not found');
-    return row;
-  }
-  getTicket(actor, id) { return ticketView(this.db, this.row(actor, id)); }
-  receiveWebhook(event) {
-    const t = this.db.prepare('SELECT * FROM tickets WHERE id = ? AND tenant_id = ?')
-      .get(event.ticketId, event.tenantId);
-    if (!t || !event.eventId || typeof event.body !== 'string') throw new DeskError(400, 'Invalid event');
-    this.db.prepare('INSERT INTO messages(ticket_id, event_id, body) VALUES (?, ?, ?)')
-      .run(t.id, event.eventId, event.body);
-    record(this.db, t.id, 'inbound', event.eventId);
-    return { accepted: true };
-  }
+
+  listTickets(actor) { return this.query.list(actor); }
+
+  getTicket(actor, id) { return this.query.get(actor, id); }
+
+  receiveWebhook(event) { return this.inbound.handle(event); }
+
   updateDraft(actor, id, body) {
-    this.row(actor, id);
-    if (typeof body !== 'string' || !body.trim()) throw new DeskError(400, 'A reply is required');
-    this.db.prepare("UPDATE tickets SET draft = ?, version = version + 1, send_state = 'DRAFT' WHERE id = ?")
-      .run(body, id);
-    record(this.db, id, 'draft_updated', actor.id);
+    this.drafts.updateDraft(actor, id, body);
     return this.getTicket(actor, id);
   }
+
   approveDraft(actor, id) {
-    const t = this.row(actor, id);
-    if (!t.draft) throw new DeskError(400, 'No draft');
-    this.db.prepare('UPDATE tickets SET approved_version = version WHERE id = ?').run(id);
-    record(this.db, id, 'approved', actor.id);
+    this.drafts.approve(actor, id);
     return this.getTicket(actor, id);
   }
+
   handoff(actor, id) {
-    this.row(actor, id);
-    this.db.prepare("UPDATE tickets SET owner = 'human' WHERE id = ?").run(id);
-    record(this.db, id, 'human_handoff', actor.id);
+    this.drafts.handoff(actor, id);
     return this.getTicket(actor, id);
   }
-  async sendReply(actor, id, { automatic = false } = {}) {
-    const t = this.row(actor, id);
-    if (t.approved_version == null) throw new DeskError(409, 'Approve the reply first');
-    let result;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        result = await this.provider.send({ clientRef: randomUUID(), ticketId: id, body: t.draft });
-        break;
-      } catch (error) {
-        if (attempt === 1) throw error;
-      }
-    }
-    this.db.prepare("UPDATE tickets SET send_state = 'SENT' WHERE id = ?").run(id);
-    record(this.db, id, 'sent', `${automatic ? 'automation' : actor.id}: ${result.providerMessageId}`);
+
+  async sendReply(actor, id, options = {}) {
+    await this.dispatcher.dispatch(actor, id, options);
     return this.getTicket(actor, id);
   }
+
   async reconcile(actor, id) {
-    this.row(actor, id);
-    throw new DeskError(501, 'Reconciliation has not been implemented');
+    await this.reconciler.reconcile(actor, id);
+    return this.getTicket(actor, id);
   }
 }
