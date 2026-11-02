@@ -9,5 +9,5 @@ RUN mkdir -p /app/data && chown -R node:node /app
 USER node
 EXPOSE 4300
 VOLUME ["/app/data"]
-HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0.1:4300/ >/dev/null || exit 1
+HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD wget -qO- http://127.0.0.1:4300/health >/dev/null || exit 1
 CMD ["node", "--no-warnings", "scripts/docker/start-stack.mjs"]

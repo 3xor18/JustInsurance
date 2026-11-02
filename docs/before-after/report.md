@@ -17,5 +17,7 @@ Requirement tests: baseline 6 pass / 20 fail · feature 26 pass / 0 fail
 | S11 | R4 | App killed while the provider call is in flight, restarted, Send clicked again | FAIL | PASS |
 | S12 | R5 | Human takes over, automation tries to send, human sends | FAIL | PASS |
 | S13 | R6 | Ticket view tells the operator the next safe action | FAIL | PASS |
+| S14 | OPS | Health endpoint and tenant-scoped delivery metrics | FAIL | PASS |
+| S15 | R4+OPS | Uncertain delivery, restart with the background reconciler on, no operator action | FAIL | PASS |
 
 Full detail with highlighted deltas: `docs/before-after/report.html`.

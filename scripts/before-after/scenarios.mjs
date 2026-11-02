@@ -6,6 +6,8 @@ const SECRET = 'fictional-webhook-secret';
 const PARALLEL = 5;
 const DELAY_KILL_AFTER_MS = 800;
 const DELAY_PROVIDER_MS = 10500;
+const SWEEPER_INTERVAL = '300';
+const SWEEPER_WAIT_MS = 1500;
 
 const repeat = (count, fn) => Promise.all(Array.from({ length: count }, fn));
 const statuses = responses => responses.map(r => r.status).sort().join(',');
@@ -169,5 +171,31 @@ export const SCENARIOS = Object.freeze([
       return { hasNextAction: typeof ticket.body.nextAction === 'string', auditEntries: ticket.body.audit.length, auditHasActor: ticket.body.audit.every(a => 'actor' in a) };
     },
     expect: o => o.hasNextAction && o.auditHasActor
+  }
+,
+  {
+    id: 'S14', requirement: 'OPS', title: 'Health endpoint and tenant-scoped delivery metrics',
+    async run(ctx) {
+      const health = await ctx.raw('/health');
+      const metrics = await ctx.api(BETA, 'GET', '/api/metrics');
+      return { healthStatus: health.status, healthBody: health.body?.status ?? null, metricsStatus: metrics.status, metricsTenant: metrics.body?.tenantId ?? null };
+    },
+    expect: o => o.healthStatus === 200 && o.healthBody === 'ok' && o.metricsStatus === 200 && o.metricsTenant === 'beta'
+  },
+  {
+    id: 'S15', requirement: 'R4+OPS', title: 'Uncertain delivery, restart with the background reconciler on, no operator action',
+    async run(ctx) {
+      await ctx.api(ALPHA, 'POST', '/api/tickets/101/draft', { body: 'Resolved by the background reconciler' });
+      await ctx.api(ALPHA, 'POST', '/api/tickets/101/approve', {});
+      await ctx.mode('accept_then_timeout');
+      const before = await ctx.deliveries();
+      await ctx.api(ALPHA, 'POST', '/api/tickets/101/send', {});
+      await ctx.mode('normal');
+      await ctx.restartApp({ DESK_RECONCILE_INTERVAL_MS: SWEEPER_INTERVAL });
+      await sleep(SWEEPER_WAIT_MS);
+      const ticket = await ctx.api(ALPHA, 'GET', '/api/tickets/101');
+      return { state: ticket.body?.send_state ?? null, providerDeliveries: (await ctx.deliveries()) - before };
+    },
+    expect: o => o.state === 'SENT' && o.providerDeliveries === 1
   }
 ]);

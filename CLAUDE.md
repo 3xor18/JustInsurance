@@ -7,7 +7,7 @@ A fictional support-desk work sample: Node.js 24, zero npm dependencies, built-i
 contract and the mock provider semantics in `CONTRACT.md` must be preserved.
 
 ## Commands
-- `npm run provider` · `npm start` · `npm run event` · `npm test`
+- `npm run provider` · `npm start` · `npm run event` · `npm test` · `npm run coverage` (gate 90/80/90)
 - `npm run before-after` — black-box battery against the baseline commit (worktree) and HEAD → `docs/before-after/`
 - `npm run graph` — regenerates `docs/graphs/module-graph.md`
 - `docker compose up -d --build` — app + mock provider in one container on `127.0.0.1:4300`

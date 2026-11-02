@@ -15,8 +15,13 @@ export class DeliveryReconciler {
 
   async reconcile(actor, id) {
     const attempt = this.db.transaction(() => this.#requireUnresolved(actor, id));
+    await this.reconcileAttempt(attempt, actor.id);
+  }
+
+  async reconcileAttempt(attempt, actorId, { auditInconclusive = true } = {}) {
     const resolution = await this.#lookup(attempt);
-    this.db.transaction(() => this.#apply(actor, attempt, resolution));
+    this.db.transaction(() => this.#apply(actorId, attempt, resolution, auditInconclusive));
+    return resolution;
   }
 
   markUndelivered(actor, id, reason, maxReasonLength) {
@@ -47,21 +52,21 @@ export class DeliveryReconciler {
     }
   }
 
-  #apply(actor, attempt, resolution) {
+  #apply(actorId, attempt, resolution, auditInconclusive) {
     const { attempts, audit } = this.repositories;
     const current = attempts.findById(attempt.id);
     const base = describe(AuditDetail.CLIENT_REF + attempt.client_ref, AuditDetail.FROM_STATE + current.state);
     if (!resolution.resolved || !UNRESOLVED_STATES.includes(current.state)) {
-      audit.record(attempt.ticket_id, AuditAction.RECONCILE_INCONCLUSIVE, actor.id, describe(base, AuditDetail.REASON + resolution.reason));
+      if (auditInconclusive) audit.record(attempt.ticket_id, AuditAction.RECONCILE_INCONCLUSIVE, actorId, describe(base, AuditDetail.REASON + resolution.reason));
       return;
     }
     attempts.transition(current.id, current.state, DeliveryState.SENT, resolution.providerId);
     this.repositories.tickets.setSendStateIfVersion(current.ticket_id, current.version, DeliveryState.SENT);
-    audit.record(current.ticket_id, resolution.auditAction, actor.id, describe(
+    audit.record(current.ticket_id, resolution.auditAction, actorId, describe(
       base, AuditDetail.PROVIDER_ID + resolution.providerId, AuditDetail.COUNT + resolution.count
     ));
     if (resolution.count > MULTIPLE_DELIVERIES) {
-      audit.record(current.ticket_id, AuditAction.DUPLICATE_DELIVERY_DETECTED, actor.id, describe(base, AuditDetail.COUNT + resolution.count));
+      audit.record(current.ticket_id, AuditAction.DUPLICATE_DELIVERY_DETECTED, actorId, describe(base, AuditDetail.COUNT + resolution.count));
     }
   }
 }

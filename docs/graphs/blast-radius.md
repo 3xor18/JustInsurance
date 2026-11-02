@@ -17,6 +17,9 @@ flowchart LR
     AU[POST …/automation]
     R[POST …/reconcile]
     B[(process start)]
+    HL[GET /health]
+    MT[GET /api/metrics]
+    TM((timer))
     UI[public/index.html]
   end
   subgraph Application
@@ -26,6 +29,8 @@ flowchart LR
     DD[DeliveryDispatcher]
     DR[DeliveryReconciler]
     SR[StartupRecovery]
+    RS[ReconciliationSweeper]
+    OQ[OperationsQuery]
   end
   subgraph Domain
     SP[SendPolicy]
@@ -54,6 +59,8 @@ flowchart LR
   DR -- GET /messages?clientRef --> P
   DR --> AT & T & AD
   B --> SR --> AT & T & AD
+  TM --> RS --> DR
+  HL & MT --> OQ --> AT & AD
   AT -.guarded by.-> SM
   UI --> L & G & D & A & H & S & AU & R
 ```
@@ -74,10 +81,14 @@ flowchart LR
 | process start | yes | migrations 1–5, recovery of PENDING attempts to UNKNOWN | sure | S08, S11, migration test |
 | `GET /` (inbox) | yes | renders next action, attempts and audit with `textContent` only | sure | S13, security test |
 | mock provider | no | untouched by design | sure | identical behaviour both sides |
+| `GET /health` | new | database ping + reconciler status | sure | S14, operations tests |
+| `GET /api/metrics` | new | tenant-scoped counters | sure | S14, operations tests |
+| reconciler timer | new | looks up `UNKNOWN` attempts with backoff + jitter, never resends | sure | S15, operations tests |
+| SIGTERM / SIGINT | yes | drain in-flight sends and the reconciler run before closing | sure | operations tests |
 | `npm run event` | no | still posts the same fixture event; replays are now idempotent | sure | S01 |
 
 ## Shared-table coupling
-`attempts` is written by three writers (dispatcher settle, reconciler, startup recovery). All three use
+`attempts` is written by four writers (dispatcher settle, operator reconcile, background reconciler, startup recovery). All four use
 compare-and-set transitions (`WHERE id = ? AND state = ?`) validated by `DeliveryStateMachine`, so the
 first writer wins and the others record `settlement_skipped` / `reconcile_inconclusive` instead of
 overwriting. `tickets.send_state` is only updated when the attempt's version is still the current draft

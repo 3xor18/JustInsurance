@@ -1,4 +1,4 @@
-import { Encoding, ErrorMessage, HeaderValue, HttpHeader } from '../config/constants.mjs';
+import { Encoding, ErrorMessage, HeaderValue, HttpHeader, HttpStatus } from '../config/constants.mjs';
 import { DeskError } from '../domain/errors.mjs';
 
 const SECURITY_HEADERS = Object.freeze({
@@ -41,7 +41,12 @@ export function sendJson(response, status, body, requestId) {
   response.end(JSON.stringify(body));
 }
 
-export function sendHtml(response, status, html, requestId) {
-  response.writeHead(status, { ...SECURITY_HEADERS, [HttpHeader.CONTENT_TYPE]: HeaderValue.HTML, [HttpHeader.REQUEST_ID]: requestId });
-  response.end(html);
+export function sendPage(request, response, page, requestId) {
+  const headers = { ...SECURITY_HEADERS, [HttpHeader.CACHE_CONTROL]: HeaderValue.REVALIDATE, [HttpHeader.ETAG]: page.etag, [HttpHeader.REQUEST_ID]: requestId };
+  if (request.headers[HttpHeader.IF_NONE_MATCH] === page.etag) {
+    response.writeHead(HttpStatus.NOT_MODIFIED, headers);
+    return response.end();
+  }
+  response.writeHead(HttpStatus.OK, { ...headers, [HttpHeader.CONTENT_TYPE]: HeaderValue.HTML });
+  return response.end(page.body);
 }

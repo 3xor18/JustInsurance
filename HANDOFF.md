@@ -23,20 +23,25 @@ the mock provider unchanged.
 - **Usable handoff.** The API returns `nextAction`, `approved`, attempts (state, origin, `clientRef`,
   provider id) and an audit trail with an actor column. The UI renders all of it with `textContent`
   only. The inbox list shows an unresolved delivery even after the draft is edited.
+- **Operability.** A background reconciler looks up `UNKNOWN` deliveries with exponential backoff and
+  jitter. It only reads and never resends. There are also `GET /health`, a tenant-scoped
+  `GET /api/metrics`, and a graceful SIGTERM shutdown that drains in-flight sends. CI runs the
+  coverage-gated tests, the before/after battery and a Docker smoke test.
 - **Additions.** Customer text, drafts and attempt bodies are encrypted at rest (AES-256-GCM). There
   are versioned migrations that upgrade a starter `data/` database in place, an operator action
   `mark-undelivered` (UNKNOWN → FAILED, reason required, audited), a Docker image, a before/after
   harness and a generated module graph.
 
-**Proposed, not done.** Provider-side idempotency keys, a reconciliation sweep job, real authentication,
-and metrics/alerting.
+**Proposed, not done.** Provider-side idempotency keys, real authentication, Prometheus export and alert
+rules, and a tamper-evident hash chain on the audit table. A cache was evaluated and rejected: state must
+be exact, and reads are already microseconds.
 
 ## Verification
 | Command | Result |
 |---|---|
-| `npm test` | 57 pass, 0 fail (requirements, HTTP contract, security, units, migration, review fixes) |
+| `npm test` / `npm run coverage` | 68 pass, 0 fail; coverage 97.5 % lines, 95.6 % branches, 93 % functions (gate 90/80/90) |
 | `node --test test/requirements.test.mjs` on the baseline commit (`06d7be3`) | 6 pass, 20 fail (red), every requirement reproduced |
-| `npm run before-after` | baseline 2/13 scenarios pass, feature 13/13. Report: `docs/before-after/report.html` |
+| `npm run before-after` | baseline 2/15 scenarios pass, feature 15/15. Report: `docs/before-after/report.html` |
 | `docker compose up -d --build` + webhook/draft/approve/send via curl | 200s, delivery `SENT`, one provider delivery |
 
 The before/after battery starts the real mock provider and server for each side. It covers 504, 503,
@@ -46,8 +51,8 @@ cross-tenant probes. Only manually verified: the UI flow in Chrome (screenshots 
 ## Operator instructions
 - **UNKNOWN** means the provider may or may not have delivered the message. **Do not** click Send again,
   and do not edit and resend; the server refuses both until the delivery is resolved.
-- Use **Check delivery**. If the provider confirms this `clientRef`, the attempt becomes `SENT` without
-  a resend. `not_found` is *not* proof of non-delivery, so the state stays `UNKNOWN`.
+- The background reconciler checks it automatically. You can also use **Check delivery**. If the provider
+  confirms this `clientRef`, the attempt becomes `SENT` without a resend. `not_found` is *not* proof of non-delivery, so the state stays `UNKNOWN`.
 - If checks stay inconclusive, verify with the provider console or the customer, then use **Mark not
   delivered** with a reason. Only then is a new send allowed. The audit records who decided and why.
 - **FAILED** after a 503 is a documented rejection before acceptance, so it is safe to send again.
@@ -67,8 +72,8 @@ This exercise is not production-ready.
   are also out of scope.
 - **Real GHL pilot.** First confirm how GHL deduplicates and whether it supports idempotency keys. Then
   confirm its lookup semantics and delay, and its webhook signature (HMAC) and retry policy, by replaying
-  captured payloads in a sandbox. Roll out behind a per-tenant flag. Add metrics and alerts on the count
-  and age of `UNKNOWN` attempts, `dispatch_refused` and `duplicate_delivery_detected`. To roll back,
+  captured payloads in a sandbox. Roll out behind a per-tenant flag. Alert on the `/api/metrics` counters: the count and age of `UNKNOWN`
+  attempts, `dispatch_refused` and `duplicate_delivery_detected`. To roll back,
   disable outbound sends per tenant; the attempt ledger keeps state consistent.
 
 ## AI use and time

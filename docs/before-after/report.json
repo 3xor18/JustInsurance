@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-11-02T11:33:14.772Z",
+  "generatedAt": "2026-11-02T11:44:26.962Z",
   "baselineRef": "06d7be33e5a97bc9242f7bd40ff5ebf3328ed270",
-  "featureRef": "2e14290",
+  "featureRef": "37d2970",
   "tests": {
     "before": {
       "pass": 6,
@@ -158,6 +158,28 @@
           "auditHasActor": false
         },
         "passed": false
+      },
+      {
+        "id": "S14",
+        "requirement": "OPS",
+        "title": "Health endpoint and tenant-scoped delivery metrics",
+        "observed": {
+          "healthStatus": 401,
+          "healthBody": null,
+          "metricsStatus": 404,
+          "metricsTenant": null
+        },
+        "passed": false
+      },
+      {
+        "id": "S15",
+        "requirement": "R4+OPS",
+        "title": "Uncertain delivery, restart with the background reconciler on, no operator action",
+        "observed": {
+          "state": "DRAFT",
+          "providerDeliveries": 2
+        },
+        "passed": false
       }
     ]
   },
@@ -305,6 +327,28 @@
           "hasNextAction": true,
           "auditEntries": 44,
           "auditHasActor": true
+        },
+        "passed": true
+      },
+      {
+        "id": "S14",
+        "requirement": "OPS",
+        "title": "Health endpoint and tenant-scoped delivery metrics",
+        "observed": {
+          "healthStatus": 200,
+          "healthBody": "ok",
+          "metricsStatus": 200,
+          "metricsTenant": "beta"
+        },
+        "passed": true
+      },
+      {
+        "id": "S15",
+        "requirement": "R4+OPS",
+        "title": "Uncertain delivery, restart with the background reconciler on, no operator action",
+        "observed": {
+          "state": "SENT",
+          "providerDeliveries": 1
         },
         "passed": true
       }

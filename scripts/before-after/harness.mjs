@@ -6,6 +6,7 @@ import { SCENARIOS } from './scenarios.mjs';
 
 const LOOPBACK = 'http://127.0.0.1:';
 const PROVIDER_TIMEOUT_MS = '2000';
+const SWEEPER_OFF = '0';
 
 export async function runBattery({ appDir, providerDir = appDir, appPort, providerPort, label }) {
   const dataDir = mkdtempSync(join(tmpdir(), `desk-${label}-`));
@@ -17,7 +18,7 @@ export async function runBattery({ appDir, providerDir = appDir, appPort, provid
   });
   const app = new ManagedProcess({
     name: 'app', cwd: resolve(appDir), script: 'src/server.mjs', readyUrl: appUrl + '/',
-    env: { PORT: String(appPort), DESK_DB: join(dataDir, 'desk.sqlite'), PROVIDER_URL: providerUrl, PROVIDER_TIMEOUT_MS }
+    env: { PORT: String(appPort), DESK_DB: join(dataDir, 'desk.sqlite'), PROVIDER_URL: providerUrl, PROVIDER_TIMEOUT_MS, DESK_RECONCILE_INTERVAL_MS: SWEEPER_OFF }
   });
   const json = async response => ({ status: response.status, body: await response.json().catch(() => null) });
   const ctx = {
@@ -29,7 +30,8 @@ export async function runBattery({ appDir, providerDir = appDir, appPort, provid
     }).then(json),
     mode: mode => fetch(providerUrl + '/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) }),
     deliveries: () => fetch(providerUrl + '/deliveries').then(r => r.json()).then(rows => rows.length),
-    restartApp: () => app.restart()
+    restartApp: extraEnv => app.restart(extraEnv),
+    raw: path => fetch(appUrl + path).then(json)
   };
   await provider.start();
   await app.start();

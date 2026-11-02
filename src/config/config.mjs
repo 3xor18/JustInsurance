@@ -10,7 +10,11 @@ const DEFAULTS = Object.freeze({
   BUSY_TIMEOUT_MS: 3000,
   MAX_BODY_BYTES: 100000,
   MAX_MESSAGE_LENGTH: 5000,
-  MAX_EVENT_ID_LENGTH: 200
+  MAX_EVENT_ID_LENGTH: 200,
+  RECONCILE_INTERVAL_MS: 30000,
+  RECONCILE_MAX_BACKOFF_MS: 300000,
+  RECONCILE_JITTER_RATIO: 0.2,
+  SHUTDOWN_GRACE_MS: 10000
 });
 
 const toNumber = (value, fallback) => (value === undefined || value === '' ? fallback : Number(value));
@@ -35,6 +39,12 @@ const build = env => Object.freeze({
     devPassphrase: FIXTURE_DEV_DATA_PASSPHRASE,
     identities: FIXTURE_IDENTITIES
   }),
+  reconciler: Object.freeze({
+    intervalMs: toNumber(env.DESK_RECONCILE_INTERVAL_MS, DEFAULTS.RECONCILE_INTERVAL_MS),
+    maxBackoffMs: toNumber(env.DESK_RECONCILE_MAX_BACKOFF_MS, DEFAULTS.RECONCILE_MAX_BACKOFF_MS),
+    jitterRatio: toNumber(env.DESK_RECONCILE_JITTER_RATIO, DEFAULTS.RECONCILE_JITTER_RATIO)
+  }),
+  shutdown: Object.freeze({ graceMs: toNumber(env.DESK_SHUTDOWN_GRACE_MS, DEFAULTS.SHUTDOWN_GRACE_MS) }),
   limits: Object.freeze({
     maxMessageLength: toNumber(env.DESK_MAX_MESSAGE_LENGTH, DEFAULTS.MAX_MESSAGE_LENGTH),
     maxEventIdLength: toNumber(env.DESK_MAX_EVENT_ID_LENGTH, DEFAULTS.MAX_EVENT_ID_LENGTH)

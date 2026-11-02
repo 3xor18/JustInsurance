@@ -4,6 +4,8 @@
     "application/delivery-reconciler.mjs",
     "application/draft-workflow.mjs",
     "application/inbound-webhook-handler.mjs",
+    "application/operations-query.mjs",
+    "application/reconciliation-sweeper.mjs",
     "application/startup-recovery.mjs",
     "application/support.mjs",
     "application/ticket-query.mjs",
@@ -85,6 +87,18 @@
     [
       "application/inbound-webhook-handler.mjs",
       "application/support.mjs"
+    ],
+    [
+      "application/operations-query.mjs",
+      "config/constants.mjs"
+    ],
+    [
+      "application/operations-query.mjs",
+      "infrastructure/sql.mjs"
+    ],
+    [
+      "application/reconciliation-sweeper.mjs",
+      "config/constants.mjs"
     ],
     [
       "application/startup-recovery.mjs",
@@ -313,6 +327,18 @@
     [
       "service.mjs",
       "application/ticket-query.mjs"
+    ],
+    [
+      "service.mjs",
+      "application/operations-query.mjs"
+    ],
+    [
+      "service.mjs",
+      "application/reconciliation-sweeper.mjs"
+    ],
+    [
+      "service.mjs",
+      "infrastructure/logger.mjs"
     ],
     [
       "service.mjs",

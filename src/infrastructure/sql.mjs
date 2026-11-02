@@ -104,6 +104,16 @@ export const AttemptSql = freeze({
     WHERE id = ? AND state = ?`
 });
 
+export const MetricsSql = freeze({
+  ping: 'SELECT 1 AS ok',
+  attemptsByState: `SELECT a.state, COUNT(*) AS count FROM attempts a JOIN tickets t ON t.id = a.ticket_id
+    WHERE t.tenant_id = ? GROUP BY a.state`,
+  oldestUnresolvedSeconds: `SELECT CAST((julianday('now') - julianday(MIN(a.created_at))) * 86400 AS INTEGER) AS seconds
+    FROM attempts a JOIN tickets t ON t.id = a.ticket_id WHERE t.tenant_id = ? AND a.state IN (${UNRESOLVED_PLACEHOLDERS})`,
+  auditCounts: actions => `SELECT d.action, COUNT(*) AS count FROM audit d JOIN tickets t ON t.id = d.ticket_id
+    WHERE t.tenant_id = ? AND d.action IN (${actions.map(() => '?').join(', ')}) GROUP BY d.action`
+});
+
 export const AuditSql = freeze({
   insert: 'INSERT INTO audit(ticket_id, action, actor, detail) VALUES (?, ?, ?, ?)',
   listByTicket: 'SELECT id, ticket_id, action, actor, detail, created_at FROM audit WHERE ticket_id = ? ORDER BY id'

@@ -31,6 +31,8 @@ flowchart LR
     application_delivery_reconciler_mjs["application/delivery-reconciler.mjs"]
     application_draft_workflow_mjs["application/draft-workflow.mjs"]
     application_inbound_webhook_handler_mjs["application/inbound-webhook-handler.mjs"]
+    application_operations_query_mjs["application/operations-query.mjs"]
+    application_reconciliation_sweeper_mjs["application/reconciliation-sweeper.mjs"]
     application_startup_recovery_mjs["application/startup-recovery.mjs"]
     application_support_mjs["application/support.mjs"]
     application_ticket_query_mjs["application/ticket-query.mjs"]
@@ -61,6 +63,9 @@ flowchart LR
   application_inbound_webhook_handler_mjs --> config_constants_mjs
   application_inbound_webhook_handler_mjs --> domain_errors_mjs
   application_inbound_webhook_handler_mjs --> application_support_mjs
+  application_operations_query_mjs --> config_constants_mjs
+  application_operations_query_mjs --> infrastructure_sql_mjs
+  application_reconciliation_sweeper_mjs --> config_constants_mjs
   application_startup_recovery_mjs --> config_constants_mjs
   application_startup_recovery_mjs --> application_support_mjs
   application_support_mjs --> config_constants_mjs
@@ -118,6 +123,9 @@ flowchart LR
   service_mjs --> application_startup_recovery_mjs
   service_mjs --> application_support_mjs
   service_mjs --> application_ticket_query_mjs
+  service_mjs --> application_operations_query_mjs
+  service_mjs --> application_reconciliation_sweeper_mjs
+  service_mjs --> infrastructure_logger_mjs
   service_mjs --> domain_errors_mjs
   store_mjs --> config_config_mjs
   store_mjs --> domain_errors_mjs
@@ -127,17 +135,20 @@ flowchart LR
 
 | Module | Imported by |
 |---|---|
-| `config/constants.mjs` | 23 |
+| `config/constants.mjs` | 25 |
 | `domain/errors.mjs` | 12 |
 | `application/support.mjs` | 6 |
 | `config/config.mjs` | 4 |
-| `infrastructure/sql.mjs` | 3 |
+| `infrastructure/sql.mjs` | 4 |
 | `config/fixtures.mjs` | 2 |
 | `infrastructure/database.mjs` | 2 |
+| `infrastructure/logger.mjs` | 2 |
 | `application/delivery-dispatcher.mjs` | 1 |
 | `application/delivery-reconciler.mjs` | 1 |
 | `application/draft-workflow.mjs` | 1 |
 | `application/inbound-webhook-handler.mjs` | 1 |
+| `application/operations-query.mjs` | 1 |
+| `application/reconciliation-sweeper.mjs` | 1 |
 | `application/startup-recovery.mjs` | 1 |
 | `application/ticket-query.mjs` | 1 |
 | `domain/delivery-state-machine.mjs` | 1 |
@@ -149,7 +160,6 @@ flowchart LR
 | `http/http-io.mjs` | 1 |
 | `http/router.mjs` | 1 |
 | `infrastructure/field-cipher.mjs` | 1 |
-| `infrastructure/logger.mjs` | 1 |
 | `infrastructure/migrations.mjs` | 1 |
 | `infrastructure/persistence-factory.mjs` | 1 |
 | `infrastructure/repositories.mjs` | 1 |

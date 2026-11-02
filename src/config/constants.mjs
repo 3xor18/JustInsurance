@@ -15,7 +15,7 @@ export const Owner = freeze({ AUTOMATION: 'automation', HUMAN: 'human' });
 
 export const DispatchOrigin = freeze({ MANUAL: 'manual', AUTOMATION: 'automation' });
 
-export const SystemActor = freeze({ WEBHOOK: 'webhook', AUTOMATION: 'automation', RECOVERY: 'startup-recovery' });
+export const SystemActor = freeze({ WEBHOOK: 'webhook', AUTOMATION: 'automation', RECOVERY: 'startup-recovery', RECONCILER: 'background-reconciler' });
 
 export const AuditAction = freeze({
   INBOUND: 'inbound',
@@ -43,6 +43,7 @@ export const LookupState = freeze({ DELIVERED: 'delivered', NOT_FOUND: 'not_foun
 
 export const HttpStatus = freeze({
   OK: 200,
+  NOT_MODIFIED: 304,
   BAD_REQUEST: 400,
   UNAUTHORIZED: 401,
   NOT_FOUND: 404,
@@ -65,7 +66,9 @@ export const HttpHeader = freeze({
   NO_SNIFF: 'X-Content-Type-Options',
   FRAME_OPTIONS: 'X-Frame-Options',
   REFERRER_POLICY: 'Referrer-Policy',
-  CACHE_CONTROL: 'Cache-Control'
+  CACHE_CONTROL: 'Cache-Control',
+  ETAG: 'ETag',
+  IF_NONE_MATCH: 'if-none-match'
 });
 
 export const HeaderValue = freeze({
@@ -75,11 +78,14 @@ export const HeaderValue = freeze({
   DENY: 'DENY',
   NO_REFERRER: 'no-referrer',
   NO_STORE: 'no-store',
+  REVALIDATE: 'no-cache',
   BEARER_PREFIX: 'Bearer '
 });
 
 export const RoutePath = freeze({
   HOME: '/',
+  HEALTH: '/health',
+  METRICS: '/api/metrics',
   WEBHOOK: '/webhooks/ghl',
   TICKETS: '/api/tickets',
   TICKET: /^\/api\/tickets\/(\d+)$/,
@@ -154,7 +160,9 @@ export const LogEvent = freeze({
   LISTENING: 'server.listening',
   REQUEST_FAILED: 'request.failed',
   RECOVERY: 'startup.recovery',
-  SHUTDOWN: 'server.shutdown'
+  SHUTDOWN: 'server.shutdown',
+  SWEEP: 'reconciler.sweep',
+  SWEEP_FAILED: 'reconciler.sweep_failed'
 });
 
 export const LogLevel = freeze({ INFO: 'info', WARN: 'warn', ERROR: 'error' });
@@ -175,3 +183,13 @@ export const Database = freeze({ MEMORY: ':memory:', CONSTRAINT_CODE: 'ERR_SQLIT
 export const Encoding = freeze({ UTF8: 'utf8' });
 
 export const MIN_TICKET_ID = 1;
+
+export const HealthStatus = freeze({ OK: 'ok', DEGRADED: 'degraded' });
+
+export const METRIC_AUDIT_ACTIONS = freeze([
+  AuditAction.DISPATCH_REFUSED,
+  AuditAction.DUPLICATE_DELIVERY_DETECTED,
+  AuditAction.RECOVERED_AFTER_RESTART,
+  AuditAction.MARKED_UNDELIVERED,
+  AuditAction.DELIVERY_CONFIRMED
+]);

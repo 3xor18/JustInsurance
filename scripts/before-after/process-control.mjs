@@ -28,8 +28,9 @@ export class ManagedProcess {
     await exited;
   }
 
-  async restart() {
+  async restart(extraEnv = {}) {
     await this.kill();
+    this.env = { ...this.env, ...extraEnv };
     return this.start();
   }
 

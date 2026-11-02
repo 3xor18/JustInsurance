@@ -14,6 +14,7 @@
     "before-after": "node --no-warnings scripts/before-after/run.mjs",
     "graph": "node --no-warnings scripts/graph/build-graph.mjs",
     "docker:up": "docker compose up -d --build",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "coverage": "node --test --experimental-test-coverage --test-coverage-include=src/** --test-coverage-exclude=src/mock-provider.mjs --test-coverage-exclude=src/replay-event.mjs --test-coverage-lines=90 --test-coverage-branches=80 --test-coverage-functions=90 test/*.test.mjs"
   }
 }

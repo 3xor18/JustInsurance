@@ -10,7 +10,7 @@ code{background:#f1f3f6;padding:1px 4px}
 </style>
 <h1>Support desk — make the reply workflow safe and usable</h1>
 <div class="badges"><span>CASE JI-SUPPORT-DESK</span><span>BACKEND</span><span>UI</span><span>DATA MODEL</span><span>SECURITY</span></div>
-<p class="summary"><b>Executive summary.</b> The inherited inbox could duplicate inbound messages, let one organization read and change another's tickets, send an edited draft without re-approval, send the same reply several times on overlapping clicks, retry a timed-out delivery with a fresh reference (delivering twice) while recording nothing, and let automation reply after a human took over. All six required behaviours are now enforced on the server with database constraints and compare-and-set transitions, verified by 57 tests (20 of them fail on the original code) and by a black-box before/after battery (baseline 2/13, feature 13/13).</p>
+<p class="summary"><b>Executive summary.</b> The inherited inbox could duplicate inbound messages, let one organization read and change another's tickets, send an edited draft without re-approval, send the same reply several times on overlapping clicks, retry a timed-out delivery with a fresh reference (delivering twice) while recording nothing, and let automation reply after a human took over. All six required behaviours are now enforced on the server with database constraints and compare-and-set transitions, verified by 68 tests (20 of them fail on the original code; coverage 97.5&nbsp;% lines) and by a black-box before/after battery (baseline 2/15, feature 15/15). A background reconciler, health and metrics endpoints, graceful shutdown and CI make it operable.</p>
 
 <h2>1. What changed, in plain words</h2>
 <ul>
@@ -38,6 +38,9 @@ code{background:#f1f3f6;padding:1px 4px}
 <tr><td><code>POST …/handoff</code></td><td>Assigns the conversation to a human.</td><td><pre>… /api/tickets/101/handoff -d '{}'</pre></td><td>Beta can take over Alpha ticket</td><td class="new">tenant-scoped; audited</td></tr>
 <tr><td><code>POST …/reconcile</code></td><td>Resolves the last pending/uncertain attempt with provider evidence.</td><td><pre>… /api/tickets/101/reconcile -d '{}'</pre></td><td>501 Not implemented</td><td class="new">delivered → <code>SENT</code> (no resend); <code>not_found</code>/lookup error → stays <code>UNKNOWN</code> (inconclusive, audited)</td></tr>
 <tr><td><code>POST …/mark-undelivered</code> <b>(new)</b></td><td>Operator closes an <code>UNKNOWN</code> attempt after manual verification, with a reason.</td><td><pre>… -d '{"reason":"Customer confirmed nothing arrived"}'</pre></td><td>—</td><td class="new">UNKNOWN → FAILED, audited; resend becomes possible</td></tr>
+<tr><td><code>GET /health</code> <b>(new)</b></td><td>Public health: database ping and background-reconciler status.</td><td><pre>curl :4300/health</pre></td><td>—</td><td class="new"><code>{"status":"ok","database":true,"reconciler":{…}}</code></td></tr>
+<tr><td><code>GET /api/metrics</code> <b>(new)</b></td><td>Tenant-scoped counters for operations.</td><td><pre>curl :4300/api/metrics -H 'Authorization: Bearer demo-alpha-token'</pre></td><td>—</td><td class="new">attempts by state, oldest unresolved age, refused / duplicate / recovered / confirmed counts</td></tr>
+<tr><td>background reconciler</td><td>Timer that looks up <code>UNKNOWN</code> deliveries by reference; never resends.</td><td><code>DESK_RECONCILE_INTERVAL_MS</code></td><td>—</td><td class="new">confirmed → <code>SENT</code> (actor <code>background-reconciler</code>); inconclusive → exponential backoff with jitter</td></tr>
 <tr><td>process start</td><td>Migrations + recovery.</td><td>—</td><td>a crash mid-send left nothing recorded; resend delivered twice</td><td class="new">in-flight <code>PENDING</code> → <code>UNKNOWN</code> (<code>recovered_after_restart</code>); resend refused</td></tr>
 </tbody></table>
 
@@ -63,13 +66,14 @@ code{background:#f1f3f6;padding:1px 4px}
 <tr><td>R3 Exact approval</td><td>requirements R3 (6), stale version, re-approve after send, http concurrent send</td><td>S05, S06</td><td class="ko">FAIL</td><td class="ok">PASS</td></tr>
 <tr><td>R4 Honest delivery and recovery</td><td>requirements R4 (8), mark-undelivered, units for classifier/resolver/state machine</td><td>S07–S11</td><td class="ko">FAIL</td><td class="ok">PASS</td></tr>
 <tr><td>R5 Human takeover</td><td>requirements R5 (2)</td><td>S12</td><td class="ko">FAIL</td><td class="ok">PASS</td></tr>
+<tr><td>Operations (health, metrics, background reconciler, shutdown)</td><td>operations tests (11)</td><td>S14, S15</td><td class="ko">FAIL</td><td class="ok">PASS</td></tr>
 <tr><td>R6 Usable handoff</td><td>requirements R6 (2), UI never uses innerHTML, list shows UNKNOWN</td><td>S13 + screenshots</td><td class="ko">FAIL</td><td class="ok">PASS</td></tr>
 </tbody></table>
 <p>Full scenario detail with highlighted deltas: <a href="../before-after/report.html">before-after/report.html</a>. Screenshots: <a href="../screenshots/01-unknown-next-action.jpg">UNKNOWN with next action</a>, <a href="../screenshots/02-reconciled-audit.jpg">reconciled, audit trail</a>.</p>
 
 <h2>7. Operator runbook</h2>
 <ol>
-<li><b>UNKNOWN</b>: do not resend or edit to resend (the server refuses). Click <b>Check delivery</b>.</li>
+<li><b>UNKNOWN</b>: do not resend or edit to resend (the server refuses). The background reconciler checks it automatically; you can also click <b>Check delivery</b>.</li>
 <li>Confirmed → <code>SENT</code>; nothing else to do. <code>duplicate_delivery_detected</code> in the audit means the provider holds more than one delivery for the reference: contact the customer.</li>
 <li>Still inconclusive → verify with the provider console or the customer; then <b>Mark not delivered</b> with a reason and send again.</li>
 <li><b>FAILED</b> after a 503 → safe to send again.</li>

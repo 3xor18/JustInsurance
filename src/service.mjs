@@ -12,11 +12,18 @@ import { InboundWebhookHandler } from './application/inbound-webhook-handler.mjs
 import { StartupRecovery } from './application/startup-recovery.mjs';
 import { TicketAccess } from './application/support.mjs';
 import { TicketQuery } from './application/ticket-query.mjs';
+import { OperationsQuery } from './application/operations-query.mjs';
+import { ReconciliationSweeper } from './application/reconciliation-sweeper.mjs';
+import { Logger } from './infrastructure/logger.mjs';
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms).unref?.());
 
 export { DeskError } from './domain/errors.mjs';
 
 export class DeskService {
-  constructor({ databasePath = DatabaseConstant.MEMORY, provider, config = AppConfig.get(), persistenceFactory } = {}) {
+  #inFlight = new Set();
+
+  constructor({ databasePath = DatabaseConstant.MEMORY, provider, config = AppConfig.get(), persistenceFactory, logger = Logger.get(), clock, random } = {}) {
     const factory = persistenceFactory ?? new SqlitePersistenceFactory({
       databasePath, busyTimeoutMs: config.database.busyTimeoutMs, security: config.security
     });
@@ -31,9 +38,34 @@ export class DeskService {
     this.dispatcher = new DeliveryDispatcher({ ...shared, provider, policy: new SendPolicy(), classifier: new OutcomeClassifier() });
     this.reconciler = new DeliveryReconciler({ ...shared, provider, resolver: new ReconcileResolver() });
     this.recoveredAttempts = new StartupRecovery(shared).run();
+    this.sweeper = new ReconciliationSweeper({ repositories, reconciler: this.reconciler, settings: config.reconciler, logger, clock, random });
+    this.operations = new OperationsQuery({ db: this.db, sweeper: this.sweeper });
   }
 
-  close() { this.db.close(); }
+  startBackgroundJobs() { this.sweeper.start(); }
+
+  stopBackgroundJobs() { this.sweeper.stop(); }
+
+  health() { return this.operations.health(); }
+
+  metrics(actor) { return this.operations.metrics(actor); }
+
+  async drain(graceMs) {
+    this.stopBackgroundJobs();
+    await Promise.race([Promise.allSettled([...this.#inFlight, this.sweeper.whenIdle()]), sleep(graceMs)]);
+    return this.#inFlight.size;
+  }
+
+  #track(work) {
+    this.#inFlight.add(work);
+    work.finally(() => this.#inFlight.delete(work)).catch(() => {});
+    return work;
+  }
+
+  close() {
+    this.stopBackgroundJobs();
+    this.db.close();
+  }
 
   listTickets(actor) { return this.query.list(actor); }
 
@@ -57,7 +89,7 @@ export class DeskService {
   }
 
   async sendReply(actor, id, options = {}) {
-    await this.dispatcher.dispatch(actor, id, options);
+    await this.#track(this.dispatcher.dispatch(actor, id, options));
     return this.getTicket(actor, id);
   }
 
@@ -67,7 +99,7 @@ export class DeskService {
   }
 
   async reconcile(actor, id) {
-    await this.reconciler.reconcile(actor, id);
+    await this.#track(this.reconciler.reconcile(actor, id));
     return this.getTicket(actor, id);
   }
 }

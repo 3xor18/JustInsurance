@@ -21,7 +21,8 @@ export class Router {
   }
 
   async handle(request, url) {
-    if (url.pathname === RoutePath.HOME && request.method === HttpMethod.GET) return { html: this.homePage() };
+    if (url.pathname === RoutePath.HOME && request.method === HttpMethod.GET) return { page: this.homePage };
+    if (url.pathname === RoutePath.HEALTH && request.method === HttpMethod.GET) return { json: this.service.health() };
     if (url.pathname === RoutePath.WEBHOOK && request.method === HttpMethod.POST) return this.#webhook(request);
     return this.#authenticated(request, url, this.actors.resolve(request.headers));
   }
@@ -33,6 +34,7 @@ export class Router {
 
   async #authenticated(request, url, actor) {
     if (url.pathname === RoutePath.TICKETS) return this.#onlyGet(request, () => this.service.listTickets(actor));
+    if (url.pathname === RoutePath.METRICS) return this.#onlyGet(request, () => this.service.metrics(actor));
     const view = url.pathname.match(RoutePath.TICKET);
     if (view) return this.#onlyGet(request, () => this.service.getTicket(actor, Number(view[1])));
     const action = url.pathname.match(RoutePath.TICKET_ACTION);

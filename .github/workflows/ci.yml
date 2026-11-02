@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Unit, integration and HTTP tests with coverage gate
+        run: npm run coverage
+      - name: Before/after battery against the baseline commit
+        run: npm run before-after
+      - name: Upload before/after report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: before-after-report
+          path: docs/before-after/
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t support-desk:ci .
+      - name: Smoke test container
+        run: |
+          docker run -d --name desk -p 127.0.0.1:4300:4300 support-desk:ci
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:4300/health && break; sleep 1; done
+          curl -fs http://127.0.0.1:4300/health | grep '"status":"ok"'
+          curl -fs -X POST http://127.0.0.1:4300/webhooks/ghl -H 'Content-Type: application/json' -H 'X-Demo-Webhook-Secret: fictional-webhook-secret' -d '{"tenantId":"alpha","ticketId":101,"eventId":"ci-1","body":"ci"}'
+          docker rm -f desk

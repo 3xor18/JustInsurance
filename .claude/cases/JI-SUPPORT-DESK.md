@@ -79,6 +79,15 @@ permanently blocked UNKNOWN → `mark-undelivered`; inbox list hiding UNKNOWN �
 re-approve after send → refused; legacy `enc1:` plaintext → decrypt fallback; `null` JSON body → 400;
 numeric-string `ticketId` → accepted; state literals in SQL → derived from constants / bound parameters.
 
+## Iteration 2 — operability (architect recommendation, approved by the candidate)
+Cache was evaluated and **rejected**: state must be exact (a stale `SENT` hides an `UNKNOWN`), reads are
+microseconds on local SQLite, and a cache server adds infrastructure the exercise excludes. Prepared
+statements were already cached; the inbox page is now loaded once and served with an ETag.
+Added instead: background `ReconciliationSweeper` (read-only lookups, exponential backoff with jitter,
+no audit flood, never resends), `GET /health`, tenant-scoped `GET /api/metrics`, graceful shutdown that
+drains in-flight sends and the current sweep, and CI (coverage gate 90/80/90, before/after, Docker smoke).
+Evidence: 68 tests, coverage 97.5 % lines / 95.6 % branches / 93 % functions, before/after 15/15 (baseline 2/15).
+
 ## Close
-- [x] tests green (57) · [x] red on baseline (20 failing) · [x] before/after 13/13 · [x] Docker build and run verified
+- [x] tests green (68) · [x] coverage gate · [x] red on baseline (20 failing) · [x] before/after 15/15 · [x] Docker build and run verified · [x] CI workflow
 - [x] concurrency analysis written · [x] adversarial review addressed · [ ] production readiness — explicitly not claimed (see HANDOFF)
